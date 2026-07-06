@@ -9,18 +9,19 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
-from agents.researcher.models import ResearcherInput
-from agents.researcher.researcher import Researcher
-from api.deps import get_base_repo, get_researcher, get_resources_repo
+from api.concurrency import run_sync
+from api.deps import get_base_repo, get_resources_repo, get_supervisor
 from api.jobs import run_and_log
 from api.schemas import (
     EventOut,
     EventsResponse,
     QueuedResponse,
+    RunControlResponse,
     RunListResponse,
     RunStatusResponse,
     StartRunRequest,
 )
+from api.supervisor import PipelineSupervisor
 from db.repositories.base import BaseAgentRepository
 from db.repositories.resources_repository import ResourcesRepository
 
@@ -31,13 +32,17 @@ router = APIRouter(tags=["runs"])
 async def start_run(
     body: StartRunRequest,
     background_tasks: BackgroundTasks,
-    researcher: Researcher = Depends(get_researcher),
+    supervisor: PipelineSupervisor = Depends(get_supervisor),
 ) -> QueuedResponse:
     run_id = body.run_id or str(uuid.uuid4())
-    researcher_input = ResearcherInput(run_id=run_id, topic=body.topic, audience_tag=body.audience_tag)
 
+    # Same "Generate Blog" entry point as topic selection — Researcher runs
+    # first, then the supervisor auto-advances through the rest of the
+    # pipeline unless the run is paused.
     background_tasks.add_task(
-        run_and_log, researcher.run(researcher_input), f"Researcher.run(run_id={run_id})"
+        run_and_log,
+        supervisor.start(run_id, topic=body.topic, audience_tag=body.audience_tag),
+        f"PipelineSupervisor.start(run_id={run_id})",
     )
     return QueuedResponse(run_id=run_id)
 
@@ -49,19 +54,20 @@ async def list_runs(
     offset: int = Query(default=0, ge=0),
     resources_repo: ResourcesRepository = Depends(get_resources_repo),
 ) -> RunListResponse:
-    rows = resources_repo.list_runs(limit=limit, offset=offset, status=status)
+    rows = await run_sync(resources_repo.list_runs, limit=limit, offset=offset, status=status)
     items = [RunStatusResponse(**{**row, "run_id": str(row["run_id"])}) for row in rows]
     return RunListResponse(items=items, limit=limit, offset=offset)
 
 
 @router.get("/runs/{run_id}", response_model=RunStatusResponse)
 async def get_run(run_id: str, repo: BaseAgentRepository = Depends(get_base_repo)) -> RunStatusResponse:
-    run = repo.get_run(run_id)
+    run = await run_sync(repo.get_run, run_id)
     return RunStatusResponse(
         run_id=str(run["id"]),
         topic=run["topic"],
         audience_tag=run.get("audience_tag"),
         status=run["status"],
+        paused=bool(run.get("paused", False)),
         created_at=run.get("created_at"),
     )
 
@@ -72,6 +78,32 @@ async def get_run_events(
     limit: int = Query(default=50, ge=1, le=500),
     repo: BaseAgentRepository = Depends(get_base_repo),
 ) -> EventsResponse:
-    repo.get_run(run_id)  # 404s via RunNotFoundError if the run doesn't exist at all
-    events = repo.list_events(run_id, limit=limit)
+    await run_sync(repo.get_run, run_id)  # 404s via RunNotFoundError if the run doesn't exist at all
+    events = await run_sync(repo.list_events, run_id, limit=limit)
     return EventsResponse(run_id=run_id, events=[EventOut(**event) for event in events])
+
+
+@router.post("/runs/{run_id}/pause", response_model=RunControlResponse)
+async def pause_run(run_id: str, repo: BaseAgentRepository = Depends(get_base_repo)) -> RunControlResponse:
+    """Stops the supervisor's auto-advance chain at the next stage boundary.
+    Does not interrupt a stage that's already running — see `api.supervisor`.
+    """
+    await run_sync(repo.get_run, run_id)  # 404s via RunNotFoundError if the run doesn't exist at all
+    await run_sync(repo.set_paused, run_id, True)
+    return RunControlResponse(run_id=run_id, paused=True)
+
+
+@router.post("/runs/{run_id}/resume", response_model=RunControlResponse)
+async def resume_run(
+    run_id: str,
+    background_tasks: BackgroundTasks,
+    repo: BaseAgentRepository = Depends(get_base_repo),
+    supervisor: PipelineSupervisor = Depends(get_supervisor),
+) -> RunControlResponse:
+    """Clears the pause flag and, if the run is idle at a stage boundary,
+    immediately continues the pipeline from wherever it left off.
+    """
+    await run_sync(repo.get_run, run_id)  # 404s via RunNotFoundError if the run doesn't exist at all
+    await run_sync(repo.set_paused, run_id, False)
+    background_tasks.add_task(run_and_log, supervisor.resume(run_id), f"PipelineSupervisor.resume(run_id={run_id})")
+    return RunControlResponse(run_id=run_id, paused=False)

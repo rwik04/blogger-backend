@@ -31,7 +31,17 @@ class RunStatusResponse(BaseModel):
     topic: str
     audience_tag: str | None
     status: str
+    paused: bool = False
     created_at: datetime | None = None
+
+
+class RunControlResponse(BaseModel):
+    """Returned by pause/resume — just enough for the client to update its
+    local pause indicator without a full re-poll.
+    """
+
+    run_id: str
+    paused: bool
 
 
 class RunListResponse(BaseModel):

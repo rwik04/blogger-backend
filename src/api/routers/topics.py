@@ -9,12 +9,12 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
-from agents.researcher.models import ResearcherInput
-from agents.researcher.researcher import Researcher
 from agents.topic_generator.models import TopicGeneratorInput
 from agents.topic_generator.topic_generator import TopicGenerator
-from api.deps import get_researcher, get_topic_generator, get_topic_repo
+from api.concurrency import run_sync
+from api.deps import get_supervisor, get_topic_generator, get_topic_repo
 from api.jobs import run_and_log
+from api.supervisor import PipelineSupervisor
 from api.schemas import (
     GenerateTopicsRequest,
     QueuedBatchResponse,
@@ -54,7 +54,7 @@ async def generate_topics(
 
 @router.get("/topics/batches/{batch_id}", response_model=TopicBatchStatusResponse)
 async def get_batch(batch_id: str, repo: TopicRepository = Depends(get_topic_repo)) -> TopicBatchStatusResponse:
-    batch = repo.get_batch(batch_id)
+    batch = await run_sync(repo.get_batch, batch_id)
     return TopicBatchStatusResponse(
         batch_id=str(batch["id"]),
         mode=batch["mode"],
@@ -73,8 +73,8 @@ async def get_batch_events(
     limit: int = Query(default=50, ge=1, le=500),
     repo: TopicRepository = Depends(get_topic_repo),
 ) -> TopicBatchEventsResponse:
-    repo.get_batch(batch_id)  # 404s via TopicBatchNotFoundError if the batch doesn't exist at all
-    events = repo.list_batch_events(batch_id, limit=limit)
+    await run_sync(repo.get_batch, batch_id)  # 404s via TopicBatchNotFoundError if the batch doesn't exist at all
+    events = await run_sync(repo.list_batch_events, batch_id, limit=limit)
     return TopicBatchEventsResponse(batch_id=batch_id, events=[TopicBatchEventOut(**event) for event in events])
 
 
@@ -104,13 +104,13 @@ async def list_topics(
     offset: int = Query(default=0, ge=0),
     repo: TopicRepository = Depends(get_topic_repo),
 ) -> TopicListResponse:
-    rows = repo.list_topics(status=status, subject=subject, limit=limit, offset=offset)
+    rows = await run_sync(repo.list_topics, status=status, subject=subject, limit=limit, offset=offset)
     return TopicListResponse(items=[_to_topic_out(row) for row in rows], limit=limit, offset=offset)
 
 
 @router.get("/topics/{topic_id}", response_model=TopicOut)
 async def get_topic(topic_id: str, repo: TopicRepository = Depends(get_topic_repo)) -> TopicOut:
-    row = repo.get_topic(topic_id)
+    row = await run_sync(repo.get_topic, topic_id)
     return _to_topic_out(row)
 
 
@@ -119,20 +119,20 @@ async def select_topic(
     topic_id: str,
     background_tasks: BackgroundTasks,
     repo: TopicRepository = Depends(get_topic_repo),
-    researcher: Researcher = Depends(get_researcher),
+    supervisor: PipelineSupervisor = Depends(get_supervisor),
 ) -> SelectTopicResponse:
-    topic = repo.get_topic(topic_id)  # 404s via TopicNotFoundError if missing
-    repo.mark_topic_selected(topic_id)
+    topic = await run_sync(repo.get_topic, topic_id)  # 404s via TopicNotFoundError if missing
+    await run_sync(repo.mark_topic_selected, topic_id)
 
     run_id = str(uuid.uuid4())
-    researcher_input = ResearcherInput(
-        run_id=run_id,
-        topic=topic["title"],
-        audience_tag="UPSC",
-        topic_id=topic_id,
-    )
 
+    # "Generate Blog" is a single entry point, not four separate button
+    # clicks — the supervisor runs Researcher and then keeps going through
+    # Strategist/Writer/Finisher on its own (pausable at any stage boundary
+    # via `POST /runs/{run_id}/pause`).
     background_tasks.add_task(
-        run_and_log, researcher.run(researcher_input), f"Researcher.run(run_id={run_id}, topic_id={topic_id})"
+        run_and_log,
+        supervisor.start(run_id, topic=topic["title"], audience_tag="UPSC", topic_id=topic_id),
+        f"PipelineSupervisor.start(run_id={run_id}, topic_id={topic_id})",
     )
     return SelectTopicResponse(topic_id=topic_id, run_id=run_id)

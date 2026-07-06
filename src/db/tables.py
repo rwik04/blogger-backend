@@ -38,6 +38,11 @@ blog_runs = Table(
     Column("status", String, nullable=False, server_default="pending"),
     Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
     Column("topic_id", String, ForeignKey("topics.id"), nullable=True),
+    # Checked by `api.supervisor.PipelineSupervisor` at every stage boundary
+    # (after research/strategize/write, before starting the next stage) — an
+    # in-flight stage always runs to completion, this only stops the chain
+    # from auto-advancing to the next one.
+    Column("paused", Boolean, nullable=False, server_default="false"),
 )
 
 agent_events = Table(

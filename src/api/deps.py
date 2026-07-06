@@ -17,6 +17,7 @@ from agents.researcher.researcher import Researcher
 from agents.strategist.strategist import Strategist
 from agents.topic_generator.topic_generator import TopicGenerator
 from agents.writer.writer import Writer
+from api.supervisor import PipelineSupervisor
 from db.engine import get_engine
 from db.repositories.base import BaseAgentRepository
 from db.repositories.finisher_repository import FinisherRepository
@@ -45,6 +46,10 @@ def get_finisher(request: Request) -> Finisher:
 
 def get_topic_generator(request: Request) -> TopicGenerator:
     return request.app.state.topic_generator
+
+
+def get_supervisor(request: Request) -> PipelineSupervisor:
+    return request.app.state.supervisor
 
 
 def get_base_repo() -> BaseAgentRepository:

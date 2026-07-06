@@ -90,6 +90,15 @@ class BaseAgentRepository:
         except Exception:
             logger.exception("Failed to update blog_runs.status (run_id=%s status=%s)", run_id, status)
 
+    def set_paused(self, run_id: str, paused: bool) -> None:
+        """Flips `blog_runs.paused`, checked by `PipelineSupervisor` at every
+        stage boundary before auto-advancing to the next stage. Does not (and
+        cannot) interrupt a stage that's already mid-flight — see
+        `api.supervisor` for the full pause/resume semantics.
+        """
+        with self._engine.begin() as conn:
+            conn.execute(update(blog_runs).where(blog_runs.c.id == run_id).values(paused=paused))
+
     def emit_event(self, run_id: str | None, step: str, phase: str, detail: dict[str, Any] | None) -> None:
         if run_id is None:
             logger.warning("emit_event called without run_id (step=%s phase=%s)", step, phase)
