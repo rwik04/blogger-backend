@@ -1,6 +1,6 @@
 """Uniform `agent_events`-style emission around graph node execution.
 
-Applied once by the graph builder (see `agents/researcher/graph.py`) rather
+Applied once by the graph builder (see `agents/researcher/pipeline.py`) rather
 than duplicated inside every node function: each wrapped node emits a
 `started` event before running and a `done`/`failed` event after, so the
 dashboard gets step-by-step progress without every node author having to
@@ -31,6 +31,9 @@ def log_emitter(run_id: str | None, step: str, phase: str, detail: dict[str, Any
     logger.info("[run=%s] %s -> %s %s", run_id, step, phase, detail or {})
 
 
+_SUMMARY_KEY = "_event_summary"
+
+
 def with_events(
     name: str,
     fn: NodeFn,
@@ -48,9 +51,22 @@ def with_events(
             )
             raise
         elapsed_ms = round((time.monotonic() - started_at) * 1000)
-        await _maybe_await(
-            emitter(run_id, name, "done", {"elapsed_ms": elapsed_ms})
-        )
+
+        # A node may include a reserved `_event_summary` key in its returned
+        # dict to surface a human-readable one-liner on the "done" event
+        # (e.g. "Primary keyword + 5 secondary, 7-section outline") without
+        # every node author having to call the emitter directly — folded
+        # into the event detail here, then stripped so it never lands in
+        # graph state.
+        summary = None
+        if result is not None and _SUMMARY_KEY in result:
+            result = dict(result)
+            summary = result.pop(_SUMMARY_KEY)
+
+        detail: dict[str, Any] = {"elapsed_ms": elapsed_ms}
+        if summary is not None:
+            detail["summary"] = summary
+        await _maybe_await(emitter(run_id, name, "done", detail))
         return result
 
     return wrapped

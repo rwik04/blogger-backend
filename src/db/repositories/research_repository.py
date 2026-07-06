@@ -11,36 +11,29 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy import Engine, insert
+from sqlalchemy import insert
 
-from db.tables import agent_events, agent_steps, research_claim_sources, research_claims, research_sources
+from db.repositories.base import BaseAgentRepository
+from db.tables import agent_steps, blog_runs, research_claim_sources, research_claims, research_sources
 
 logger = logging.getLogger(__name__)
 
 
-class ResearchRepository:
-    def __init__(self, engine: Engine) -> None:
-        self._engine = engine
-
-    def emit_event(self, run_id: str | None, step: str, phase: str, detail: dict[str, Any] | None) -> None:
-        if run_id is None:
-            logger.warning("emit_event called without run_id (step=%s phase=%s)", step, phase)
-            return
-        try:
-            with self._engine.begin() as conn:
-                conn.execute(
-                    insert(agent_events).values(
-                        id=str(uuid.uuid4()),
-                        run_id=run_id,
-                        step=step,
-                        phase=phase,
-                        detail=detail,
-                    )
+class ResearchRepository(BaseAgentRepository):
+    def create_run(self, run_id: str, topic: str, audience_tag: str | None) -> None:
+        """Insert the parent `blog_runs` row for a run before any `agent_events`
+        are emitted — `agent_events.run_id` has a FK to `blog_runs.id`, so this
+        must happen first or every event emission silently fails.
+        """
+        with self._engine.begin() as conn:
+            conn.execute(
+                insert(blog_runs).values(
+                    id=run_id,
+                    topic=topic,
+                    audience_tag=audience_tag,
+                    status="running",
                 )
-        except Exception:
-            # Event emission is best-effort observability, not the run's
-            # correctness path — a DB hiccup here shouldn't fail the step.
-            logger.exception("Failed to emit agent_event (run_id=%s step=%s phase=%s)", run_id, step, phase)
+            )
 
     def save_research_brief(self, brief: dict[str, Any]) -> None:
         run_id = brief["run_id"]

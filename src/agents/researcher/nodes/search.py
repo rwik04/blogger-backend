@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -35,12 +36,54 @@ def _domain(url: str) -> str:
     return netloc[4:] if netloc.startswith("www.") else netloc
 
 
+_FIELD_RE = re.compile(r"^(Title|URL|Published|Author|Highlights|Text):\s*(.*)$")
+
+
+def _parse_text_entries(text: str) -> list[dict[str, str]]:
+    """Parses exa-mcp-server's actual `web_search_exa` output: plain text,
+    one entry per result, each a `Field: value` block separated by a `---`
+    line — there's no `structuredContent` or JSON at all in this server
+    version, despite what the MCP result schema might suggest.
+
+        Title: <title>
+        URL: <url>
+        Published: <date|N/A>
+        Author: <name|N/A>
+        Highlights:
+        <one or more lines of highlight/snippet text>
+    """
+    entries: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    field: str | None = None
+
+    def flush() -> None:
+        if current.get("URL"):
+            entries.append(dict(current))
+        current.clear()
+
+    for line in text.splitlines():
+        if line.strip() == "---":
+            flush()
+            field = None
+            continue
+        match = _FIELD_RE.match(line)
+        if match:
+            field = match.group(1)
+            current[field] = match.group(2).strip()
+        elif field is not None:
+            # Continuation line of a multi-line field (mainly Highlights/Text).
+            current[field] = (current.get(field, "") + "\n" + line).strip()
+    flush()
+    return entries
+
+
 def _parse_search_results(result: CallToolResult) -> list[RawSearchHit]:
     """Best-effort parsing of Exa's `web_search_exa` response. Prefers
     `structuredContent` (a list of result dicts) when present, falls back to
-    parsing the text content as JSON, and skips anything that isn't
-    recognizable rather than raising — a single sub-query returning something
-    unparseable shouldn't fail the whole round.
+    the tool's JSON text, then to its plain-text `Title:/URL:/...` format —
+    and skips anything that isn't recognizable rather than raising, since a
+    single sub-query returning something unparseable shouldn't fail the
+    whole round.
     """
     items: list[Any] = []
     structured = getattr(result, "structuredContent", None)
@@ -58,22 +101,31 @@ def _parse_search_results(result: CallToolResult) -> list[RawSearchHit]:
             elif isinstance(parsed, list):
                 items = parsed
         except json.JSONDecodeError:
-            logger.warning("web_search_exa returned non-JSON, non-structured content; skipping")
-            items = []
+            items = _parse_text_entries(text)
+            if not items:
+                logger.warning("web_search_exa returned unrecognized content; skipping")
 
     hits: list[RawSearchHit] = []
     for item in items:
         if not isinstance(item, dict):
             continue
-        url = item.get("url") or item.get("link")
+        url = item.get("url") or item.get("link") or item.get("URL")
         if not url:
             continue
-        content = item.get("text") or item.get("content") or item.get("snippet") or ""
+        content = (
+            item.get("text")
+            or item.get("content")
+            or item.get("snippet")
+            or item.get("Highlights")
+            or item.get("Text")
+            or ""
+        )
+        title = item.get("title") or item.get("Title") or url
         hits.append(
             RawSearchHit(
                 source_id=_make_source_id(url),
                 url=url,
-                title=item.get("title") or url,
+                title=title,
                 domain=_domain(url),
                 content=content,
                 needs_scrape=len(content.strip()) < _MIN_INLINE_CONTENT_CHARS,

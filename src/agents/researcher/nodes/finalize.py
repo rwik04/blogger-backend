@@ -37,7 +37,7 @@ def route_after_finalize(state: dict[str, Any]) -> str:
             "for a defensible brief"
         )
         return "fail_step"
-    return "persist_brief"
+    return "write_report"
 
 
 def make_fail_step_node() -> NodeFn:

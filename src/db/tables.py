@@ -16,6 +16,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     ForeignKey,
+    Integer,
     JSON,
     PrimaryKeyConstraint,
     String,
@@ -87,4 +88,122 @@ research_claim_sources = Table(
     Column("claim_id", String, ForeignKey("research_claims.id"), nullable=False),
     Column("source_id", String, ForeignKey("research_sources.id"), nullable=False),
     PrimaryKeyConstraint("claim_id", "source_id"),
+)
+
+# --- Strategist tables — STRATEGIST.md §4 -----------------------------------
+
+seo_plans = Table(
+    "seo_plans",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("run_id", String, ForeignKey("blog_runs.id"), nullable=False),
+    Column("primary_keyword", Text, nullable=False),
+    Column("secondary_keywords", JSON, nullable=True),
+    Column("meta_title", Text, nullable=True),
+    Column("meta_description", Text, nullable=True),
+    Column("slug", Text, nullable=True),
+)
+
+outline_sections = Table(
+    "outline_sections",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("run_id", String, ForeignKey("blog_runs.id"), nullable=False),
+    Column("section_id", String, nullable=False),
+    Column("heading", Text, nullable=False),
+    Column("target_keyword", Text, nullable=True),
+    Column("grounded", Boolean, server_default="true"),
+    Column("order_index", Integer, nullable=False),
+)
+
+# --- Writer tables — WRITER.md §6 -------------------------------------------
+
+blog_drafts = Table(
+    "blog_drafts",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("run_id", String, ForeignKey("blog_runs.id"), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("created_by_agent", String, nullable=False, server_default="writer"),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+)
+
+blog_sections = Table(
+    "blog_sections",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("draft_id", String, ForeignKey("blog_drafts.id"), nullable=False),
+    Column("section_id", String, nullable=False),
+    Column("heading", Text, nullable=False),
+    Column("body_markdown", Text, nullable=False),
+    Column("order_index", Integer, nullable=False),
+    Column("word_count", Integer, nullable=True),
+    Column("tone_notes", Text, nullable=True),
+    Column("retries_used", Integer, nullable=False, server_default="0"),
+    Column("unsupported_gaps", JSON, nullable=True),
+)
+
+blog_section_claims = Table(
+    "blog_section_claims",
+    metadata,
+    Column("section_id", String, ForeignKey("blog_sections.id"), nullable=False),
+    # The ResearchBrief's own claim id (e.g. "claim-7"), not a uuid FK to
+    # research_claims — those row ids are freshly generated at persist time
+    # and never line up with the brief's ids the Writer actually sees.
+    Column("claim_id", String, nullable=False),
+    PrimaryKeyConstraint("section_id", "claim_id"),
+)
+
+# --- Finisher tables — FINISHER.md §6 ---------------------------------------
+
+seo_audits = Table(
+    "seo_audits",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("run_id", String, ForeignKey("blog_runs.id"), nullable=False),
+    Column("keyword_density", JSON, nullable=True),
+    Column("heading_issues", JSON, nullable=True),
+    Column("meta_description_ok", Boolean, nullable=True),
+    Column("internal_link_suggestions", JSON, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+)
+
+quiz_questions = Table(
+    "quiz_questions",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("run_id", String, ForeignKey("blog_runs.id"), nullable=False),
+    Column("stem", Text, nullable=False),
+    Column("statements", JSON, nullable=False),
+    Column("options", JSON, nullable=False),
+    Column("correct_option", String, nullable=False),
+    Column("explanation", Text, nullable=True),
+    Column("related_section_id", String, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+)
+
+media_assets = Table(
+    "media_assets",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("run_id", String, ForeignKey("blog_runs.id"), nullable=False),
+    Column("kind", String, nullable=False),  # "banner" | "infographic"
+    Column("section_id", String, nullable=True),
+    Column("prompt", Text, nullable=True),
+    Column("alt_text", Text, nullable=True),
+    Column("status", String, nullable=False, server_default="pending"),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+)
+
+published_blogs = Table(
+    "published_blogs",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("run_id", String, ForeignKey("blog_runs.id"), nullable=False),
+    Column("final_title", Text, nullable=True),
+    Column("tags", JSON, nullable=True),
+    Column("subject", String, nullable=True),
+    Column("published_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("canonical_url", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
 )

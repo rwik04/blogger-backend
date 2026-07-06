@@ -8,3 +8,11 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .DS_Store
+.coverage
+.idea/
+.vscode/
+*.log
+
+# Generated agent run artifacts (research reports, etc.) — not source, and
+# tied to a specific run_id/DB state rather than something to version.
+research_outputs/

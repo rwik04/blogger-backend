@@ -31,8 +31,8 @@ class LLMClient:
     def adapter(self) -> BaseLLMAdapter:
         return self._adapter
 
-    def complete(self, messages: list[dict[str, Any]]) -> str:
-        return self._adapter.complete(messages)
+    def complete(self, messages: list[dict[str, Any]], reasoning_effort: str | None = None) -> str:
+        return self._adapter.complete(messages, reasoning_effort=reasoning_effort)
 
-    def reason(self, messages: list[dict[str, Any]], schema: Type[T]) -> T:
-        return self._adapter.reason(messages, schema)
+    def reason(self, messages: list[dict[str, Any]], schema: Type[T], reasoning_effort: str | None = None) -> T:
+        return self._adapter.reason(messages, schema, reasoning_effort=reasoning_effort)

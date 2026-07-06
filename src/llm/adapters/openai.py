@@ -20,15 +20,22 @@ class OpenAIAdapter(BaseLLMAdapter):
         self._client = OpenAI(api_key=api_key)
         self._model = model
 
-    def complete(self, messages: list[dict[str, Any]]) -> str:
+    def complete(self, messages: list[dict[str, Any]], reasoning_effort: str | None = None) -> str:
+        kwargs: dict[str, Any] = {}
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
         response = self._client.chat.completions.create(
             model=self._model,
             messages=messages,
+            **kwargs,
         )
         return response.choices[0].message.content or ""
 
-    def reason(self, messages: list[dict[str, Any]], schema: Type[T]) -> T:
+    def reason(self, messages: list[dict[str, Any]], schema: Type[T], reasoning_effort: str | None = None) -> T:
         last_error: Exception | None = None
+        kwargs: dict[str, Any] = {}
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
 
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
@@ -43,6 +50,7 @@ class OpenAIAdapter(BaseLLMAdapter):
                             "strict": True,
                         },
                     },
+                    **kwargs,
                 )
                 content = response.choices[0].message.content or ""
                 parsed = json.loads(content)

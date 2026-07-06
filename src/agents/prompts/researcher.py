@@ -95,3 +95,56 @@ def build_reflect_coverage_user_prompt(state: dict[str, Any]) -> str:
     lines.extend(_format_claim(c) for c in claims)
 
     return "\n".join(lines)
+
+
+# --- write_report ------------------------------------------------------------
+
+WRITE_REPORT_SYSTEM = """You are a research writer producing a long-form, in-depth \
+research report for a blog-writing pipeline. You are given a topic, the \
+sub-questions that were researched, and a list of pre-cited claims — each \
+already tagged with a citation marker like [1] or [1][2]. These markers are \
+fixed; you must preserve them exactly as given whenever you use that fact, \
+never renumber, invent, merge, or drop them.
+
+Write a comprehensive, well-organized research report in Markdown:
+- Start with a single H1 title, then a short 2-3 sentence overview paragraph.
+- Organize the body into thematic H2 sections (e.g. background, key \
+changes, logistics, economics, controversies) — group and synthesize \
+related claims into your own sections, don't just restate the \
+sub-questions verbatim as headers.
+- Write in flowing prose, not bullet-point dumps: synthesize claims into \
+coherent paragraphs.
+- Every claim you use must retain its citation marker(s) inline, e.g. \
+"The tournament will feature 48 teams[2]."
+- If two claims are flagged CONTRADICTED, note the disagreement explicitly \
+in the prose rather than silently picking one side.
+- Do not invent facts, statistics, or citation numbers beyond what's provided.
+- Do NOT write a "Sources" or "References" section yourself — one is \
+appended separately after your output.
+- Aim for depth and completeness: weave in as many of the provided claims \
+as are relevant and non-redundant, not just a handful."""
+
+
+def _format_cited_claim(claim: dict[str, Any]) -> str:
+    flag = " [CONTRADICTED]" if claim.get("contradicted") else ""
+    marker = claim.get("citation_marker", "")
+    return f"- ({claim['confidence']}){flag} {claim['text']} {marker}"
+
+
+def build_write_report_user_prompt(
+    topic: str,
+    audience_tag: str | None,
+    sub_queries: list[str],
+    cited_claims: list[dict[str, Any]],
+) -> str:
+    lines = [f"Topic: {topic}"]
+    if audience_tag:
+        lines.append(f"Audience tag: {audience_tag}")
+
+    lines.append("\nSub-questions researched:")
+    lines.extend(f"- {q}" for q in sub_queries)
+
+    lines.append(f"\nCited claims to draw on ({len(cited_claims)} total) — preserve the bracketed markers exactly:")
+    lines.extend(_format_cited_claim(c) for c in cited_claims)
+
+    return "\n".join(lines)

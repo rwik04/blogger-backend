@@ -17,6 +17,9 @@ dev = ["pytest>=8.3.0", "pytest-asyncio>=0.24.0"]
 
 [project.scripts]
 research = "agents.researcher.__main__:main"
+strategize = "agents.strategist.__main__:main"
+write = "agents.writer.__main__:main"
+finish = "agents.finisher.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from agents.schema_base import StrictSchema
+
 Confidence = Literal["high", "medium", "low"]
 
 
@@ -39,18 +41,23 @@ class ResearchBrief(BaseModel):
     sub_queries: list[str]
     sources: list[Source]
     claims: list[Claim]
+    report_markdown: str = ""
+    """Long-form narrative report synthesized from `claims`, with inline
+    `[n]` citation markers and a trailing Sources section — see
+    `agents.researcher.nodes.write_report`. Empty only if that node hasn't
+    run yet (e.g. reading a pre-report-feature brief from the DB)."""
 
 
 # --- Internal structured-output schemas, one per LLM-calling node ----------
 
 
-class PlannedSubQueries(BaseModel):
+class PlannedSubQueries(StrictSchema):
     """Output of `plan_queries` — RESEARCHER.md §3 step 1."""
 
     sub_queries: list[str]
 
 
-class ExtractedClaim(BaseModel):
+class ExtractedClaim(StrictSchema):
     """A single claim as returned by the compaction LLM call, before it's
     merged into the cumulative `claims` list (merging assigns the final `id`).
     """
@@ -61,12 +68,12 @@ class ExtractedClaim(BaseModel):
     contradicted: bool
 
 
-class SourceSummary(BaseModel):
+class SourceSummary(StrictSchema):
     source_id: str
     summary: str
 
 
-class RoundCompaction(BaseModel):
+class RoundCompaction(StrictSchema):
     """Output of `compact_round` — the compaction step. This is the only
     representation of a round's raw source text that survives into state;
     the raw text itself is discarded immediately after this call.
@@ -80,7 +87,7 @@ class RoundCompaction(BaseModel):
     source_summaries: list[SourceSummary]
 
 
-class ReflectDecision(BaseModel):
+class ReflectDecision(StrictSchema):
     """Output of `reflect_coverage`, evaluated over compacted memory only
     (never raw source text)."""
 

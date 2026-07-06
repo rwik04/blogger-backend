@@ -2,6 +2,12 @@
 `agents.researcher.nodes` onto `graph.engine.Graph`, with the iterative
 search -> compact -> reflect loop as the central structure.
 
+Named `pipeline.py`, not `graph.py`, deliberately: a same-named sibling of
+the top-level `graph` package (`src/graph/`) breaks `from graph.engine import
+...` when this file is ever run directly as a script rather than via
+`python -m` — running a script inserts its own directory at the front of
+`sys.path`, which would shadow the real `graph` package with this file.
+
 See the flow diagram in the plan for the full picture; in short:
 
     plan_queries -> search_round (fan-out) -> filter_rank -> selective_scrape
@@ -9,7 +15,9 @@ See the flow diagram in the plan for the full picture; in short:
                                               --(finalize)--> finalize_brief
                                                                    |
                                                     (>=3 sources)  |  (<3 sources)
-                                                        persist_brief   fail_step
+                                                     write_report      fail_step
+                                                          |
+                                                     persist_brief
 """
 
 from __future__ import annotations
@@ -23,6 +31,7 @@ from agents.researcher.nodes.persist import make_persist_brief_node
 from agents.researcher.nodes.plan_queries import make_plan_queries_node
 from agents.researcher.nodes.reflect_coverage import make_reflect_coverage_node
 from agents.researcher.nodes.search import make_search_subquery_fn, make_selective_scrape_node
+from agents.researcher.nodes.write_report import make_write_report_node
 from db.repositories.research_repository import ResearchRepository
 from graph.engine import END, CompiledGraph, Graph, build_fanout_node
 from graph.events import EventEmitter, with_events
@@ -82,6 +91,7 @@ def build_researcher_graph(
     graph.add_node("reflect_coverage", wrap("reflect_coverage", make_reflect_coverage_node(llm_client)))
     graph.add_node("finalize_brief", wrap("finalize_brief", make_finalize_brief_node()))
     graph.add_node("fail_step", wrap("fail_step", make_fail_step_node()))
+    graph.add_node("write_report", wrap("write_report", make_write_report_node(llm_client)))
     graph.add_node("persist_brief", wrap("persist_brief", make_persist_brief_node(repo)))
 
     graph.set_entry("plan_queries")
@@ -92,6 +102,7 @@ def build_researcher_graph(
     graph.add_edge("compact_round", "reflect_coverage")
     graph.add_conditional_edge("reflect_coverage", route_after_reflect)
     graph.add_conditional_edge("finalize_brief", route_after_finalize)
+    graph.add_edge("write_report", "persist_brief")
     graph.add_edge("persist_brief", END)
     graph.add_edge("fail_step", END)
 
