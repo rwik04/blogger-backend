@@ -15,6 +15,7 @@ from fastapi import Request
 from agents.finisher.finisher import Finisher
 from agents.researcher.researcher import Researcher
 from agents.strategist.strategist import Strategist
+from agents.topic_generator.topic_generator import TopicGenerator
 from agents.writer.writer import Writer
 from db.engine import get_engine
 from db.repositories.base import BaseAgentRepository
@@ -22,6 +23,7 @@ from db.repositories.finisher_repository import FinisherRepository
 from db.repositories.research_repository import ResearchRepository
 from db.repositories.resources_repository import ResourcesRepository
 from db.repositories.strategist_repository import StrategistRepository
+from db.repositories.topic_repository import TopicRepository
 from db.repositories.writer_repository import WriterRepository
 
 
@@ -39,6 +41,10 @@ def get_writer(request: Request) -> Writer:
 
 def get_finisher(request: Request) -> Finisher:
     return request.app.state.finisher
+
+
+def get_topic_generator(request: Request) -> TopicGenerator:
+    return request.app.state.topic_generator
 
 
 def get_base_repo() -> BaseAgentRepository:
@@ -67,3 +73,7 @@ def get_finisher_repo() -> FinisherRepository:
 
 def get_resources_repo() -> ResourcesRepository:
     return ResourcesRepository(get_engine())
+
+
+def get_topic_repo() -> TopicRepository:
+    return TopicRepository(get_engine())

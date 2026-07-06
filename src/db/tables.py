@@ -15,6 +15,7 @@ from __future__ import annotations
 from sqlalchemy import (
     Boolean,
     Column,
+    Float,
     ForeignKey,
     Integer,
     JSON,
@@ -36,6 +37,7 @@ blog_runs = Table(
     Column("audience_tag", String, nullable=True),
     Column("status", String, nullable=False, server_default="pending"),
     Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+    Column("topic_id", String, ForeignKey("topics.id"), nullable=True),
 )
 
 agent_events = Table(
@@ -205,5 +207,52 @@ published_blogs = Table(
     Column("subject", String, nullable=True),
     Column("published_at", TIMESTAMP(timezone=True), nullable=True),
     Column("canonical_url", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+)
+
+# --- Topic Generator tables — TOPIC_GENERATOR.md §5/§6 ----------------------
+# `topic_batches`/`topic_batch_events` are this stage's own lightweight "run"
+# concept — topic generation happens before any `blog_runs` row exists, so
+# it can't reuse `blog_runs`/`agent_events` (which FK to `blog_runs.id`).
+
+topic_batches = Table(
+    "topic_batches",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("mode", String, nullable=False),  # "autonomous" | "directed"
+    Column("user_instruction", Text, nullable=True),
+    Column("count", Integer, nullable=False, server_default="8"),
+    Column("auto_approve", Boolean, nullable=False, server_default="false"),
+    Column("status", String, nullable=False, server_default="pending"),
+    Column("error", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+)
+
+topic_batch_events = Table(
+    "topic_batch_events",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("batch_id", String, ForeignKey("topic_batches.id"), nullable=False),
+    Column("step", String, nullable=False),
+    Column("phase", String, nullable=False),  # started | done | failed
+    Column("detail", JSON, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+)
+
+topics = Table(
+    "topics",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("batch_id", String, ForeignKey("topic_batches.id"), nullable=True),
+    Column("title", Text, nullable=False),
+    Column("one_line_summary", Text, nullable=True),
+    Column("subject", String, nullable=True),
+    Column("gs_papers", JSON, nullable=True),
+    Column("why_this_topic", Text, nullable=True),
+    Column("current_relevance", Text, nullable=True),
+    Column("trigger_source_url", Text, nullable=True),
+    Column("dedup_status", String, nullable=False, server_default="new"),
+    Column("similarity_score", Float, nullable=True),
+    Column("status", String, nullable=False, server_default="suggested"),
     Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
 )

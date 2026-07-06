@@ -18,6 +18,10 @@ class ResearcherInput(BaseModel):
     run_id: str
     topic: str
     audience_tag: str | None = None
+    topic_id: str | None = None
+    """Optional back-reference to a Topic Generator candidate (`topics.id`)
+    this run was started from — null for ad-hoc topics passed as a raw
+    string."""
 
 
 class Source(BaseModel):

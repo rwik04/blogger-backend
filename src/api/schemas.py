@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, model_validator
 
+from agents.topic_generator.models import TopicGeneratorMode
 from agents.writer.models import EditPreset
 
 
@@ -84,3 +85,74 @@ class EditSectionRequest(BaseModel):
 class StatsResponse(BaseModel):
     runs_by_status: dict[str, int]
     resource_counts: dict[str, int]
+
+
+class GenerateTopicsRequest(BaseModel):
+    mode: TopicGeneratorMode
+    user_instruction: str | None = None
+    count: int = 8
+    auto_approve: bool = False
+
+    @model_validator(mode="after")
+    def _directed_requires_instruction(self) -> "GenerateTopicsRequest":
+        if self.mode is TopicGeneratorMode.DIRECTED and not (
+            self.user_instruction and self.user_instruction.strip()
+        ):
+            raise ValueError("user_instruction is required when mode='directed'")
+        return self
+
+
+class QueuedBatchResponse(BaseModel):
+    batch_id: str
+    status: str = "queued"
+
+
+class TopicBatchStatusResponse(BaseModel):
+    batch_id: str
+    mode: str
+    user_instruction: str | None
+    count: int
+    auto_approve: bool
+    status: str
+    error: str | None = None
+    created_at: datetime | None = None
+
+
+class TopicBatchEventOut(BaseModel):
+    step: str
+    phase: str
+    detail: dict[str, Any] | None
+    created_at: datetime | None = None
+
+
+class TopicBatchEventsResponse(BaseModel):
+    batch_id: str
+    events: list[TopicBatchEventOut]
+
+
+class TopicOut(BaseModel):
+    topic_id: str
+    batch_id: str | None
+    title: str
+    one_line_summary: str | None
+    subject: str | None
+    gs_papers: list[str] | None
+    why_this_topic: str | None
+    current_relevance: str | None
+    trigger_source_url: str | None
+    dedup_status: str
+    similarity_score: float | None
+    status: str
+    created_at: datetime | None = None
+
+
+class TopicListResponse(BaseModel):
+    items: list[TopicOut]
+    limit: int
+    offset: int
+
+
+class SelectTopicResponse(BaseModel):
+    topic_id: str
+    run_id: str
+    status: str = "queued"

@@ -70,7 +70,9 @@ class Researcher:
 
         # Must exist before any agent_events are emitted — agent_events.run_id
         # has a FK to blog_runs.id.
-        await asyncio.to_thread(self._repo.create_run, input.run_id, input.topic, input.audience_tag)
+        await asyncio.to_thread(
+            self._repo.create_run, input.run_id, input.topic, input.audience_tag, input.topic_id
+        )
 
         try:
             async with self._mcp_client_factory() as mcp_client:

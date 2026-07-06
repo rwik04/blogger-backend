@@ -27,11 +27,17 @@ from fastapi.responses import JSONResponse
 from agents.finisher.finisher import Finisher
 from agents.researcher.researcher import Researcher
 from agents.strategist.strategist import Strategist
+from agents.topic_generator.topic_generator import TopicGenerator
 from agents.writer.writer import Writer
-from api.routers import finisher, research, resources, runs, strategist, writer
+from api.routers import finisher, research, resources, runs, strategist, topics, writer
 from db.engine import get_engine, warm_pool
 from db.repositories.base import RunNotFoundError
-from db.repositories.errors import AgentOutputNotFoundError, SectionNotFoundError
+from db.repositories.errors import (
+    AgentOutputNotFoundError,
+    SectionNotFoundError,
+    TopicBatchNotFoundError,
+    TopicNotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.strategist = Strategist.from_env()
     app.state.writer = Writer.from_env()
     app.state.finisher = Finisher.from_env()
+    app.state.topic_generator = TopicGenerator.from_env()
     yield
 
 
@@ -77,12 +84,23 @@ async def agent_output_not_found_handler(request: Request, exc: AgentOutputNotFo
     return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
+@app.exception_handler(TopicBatchNotFoundError)
+async def topic_batch_not_found_handler(request: Request, exc: TopicBatchNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(TopicNotFoundError)
+async def topic_not_found_handler(request: Request, exc: TopicNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
 app.include_router(runs.router)
 app.include_router(research.router)
 app.include_router(strategist.router)
 app.include_router(writer.router)
 app.include_router(finisher.router)
 app.include_router(resources.router)
+app.include_router(topics.router)
 
 
 @app.get("/health")

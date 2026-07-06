@@ -22,6 +22,7 @@ research = "agents.researcher.__main__:main"
 strategize = "agents.strategist.__main__:main"
 write = "agents.writer.__main__:main"
 finish = "agents.finisher.__main__:main"
+generate-topics = "agents.topic_generator.__main__:main"
 serve-api = "api.main:main"
 
 [build-system]

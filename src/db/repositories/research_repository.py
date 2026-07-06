@@ -20,10 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 class ResearchRepository(BaseAgentRepository):
-    def create_run(self, run_id: str, topic: str, audience_tag: str | None) -> None:
+    def create_run(
+        self, run_id: str, topic: str, audience_tag: str | None, topic_id: str | None = None
+    ) -> None:
         """Insert the parent `blog_runs` row for a run before any `agent_events`
         are emitted — `agent_events.run_id` has a FK to `blog_runs.id`, so this
         must happen first or every event emission silently fails.
+
+        `topic_id`, when set, traces this run back to the Topic Generator
+        candidate (`topics.id`) it was started from.
         """
         with self._engine.begin() as conn:
             conn.execute(
@@ -32,6 +37,7 @@ class ResearchRepository(BaseAgentRepository):
                     topic=topic,
                     audience_tag=audience_tag,
                     status="running",
+                    topic_id=topic_id,
                 )
             )
 
