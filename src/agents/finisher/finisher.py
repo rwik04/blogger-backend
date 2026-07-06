@@ -25,6 +25,7 @@ from agents.finisher.pipeline import build_finisher_graph
 from db.engine import get_engine
 from db.repositories.finisher_repository import FinisherRepository
 from llm.client import LLMClient
+from media.image_search import ImageSearchClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,12 @@ class Finisher:
         llm_client: LLMClient,
         repo: FinisherRepository,
         reasoning_effort: str | None = _DEFAULT_REASONING_EFFORT,
+        image_client: ImageSearchClient | None = None,
     ) -> None:
         self._llm_client = llm_client
         self._repo = repo
         self._reasoning_effort = reasoning_effort
+        self._image_client = image_client
 
     @classmethod
     def from_env(cls) -> "Finisher":
@@ -55,7 +58,8 @@ class Finisher:
         )
         repo = FinisherRepository(get_engine())
         reasoning_effort = os.environ.get("FINISHER_REASONING_EFFORT", _DEFAULT_REASONING_EFFORT) or None
-        return cls(llm_client=llm_client, repo=repo, reasoning_effort=reasoning_effort)
+        image_client = ImageSearchClient.from_env()
+        return cls(llm_client=llm_client, repo=repo, reasoning_effort=reasoning_effort, image_client=image_client)
 
     async def run(self, input: FinisherInput) -> FinisherOutput:
         initial_state: dict[str, Any] = {
@@ -77,6 +81,7 @@ class Finisher:
                 repo=self._repo,
                 reasoning_effort=self._reasoning_effort,
                 emitter=self._emit_event_async,
+                image_client=self._image_client,
             )
             final_state = await compiled_graph.arun(initial_state)
         except Exception:

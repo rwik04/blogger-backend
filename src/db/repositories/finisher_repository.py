@@ -92,7 +92,8 @@ class FinisherRepository(BaseAgentRepository):
                         section_id=media["section_id"],
                         prompt=media["prompt"],
                         alt_text=media["alt_text"],
-                        status="pending",
+                        image_url=media.get("image_url"),
+                        status="ready" if media.get("image_url") else "pending",
                     )
                 )
 

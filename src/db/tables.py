@@ -199,6 +199,7 @@ media_assets = Table(
     Column("prompt", Text, nullable=True),
     Column("alt_text", Text, nullable=True),
     Column("status", String, nullable=False, server_default="pending"),
+    Column("image_url", Text, nullable=True),
     Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
 )
 

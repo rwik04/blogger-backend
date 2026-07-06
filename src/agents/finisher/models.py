@@ -57,6 +57,12 @@ class MediaPrompt(BaseModel):
     section_id: str | None
     prompt: str
     alt_text: str
+    image_url: str | None = None
+    """Resolved by `nodes.fetch_media_images` (Google Images via SerpAPI,
+    queried with `prompt`) right after `plan_media` — `None` if no
+    `SERPAPI_API_KEY` is configured or the search came up empty/failed.
+    Not part of FINISHER.md's original contract (which stops at the prompt),
+    same pragmatic-addition pattern as `quality_flags`."""
 
 
 class FinisherInput(BaseModel):
