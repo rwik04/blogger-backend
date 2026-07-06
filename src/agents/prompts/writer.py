@@ -42,6 +42,14 @@ important to note", "in conclusion", "delve into". Report what you changed \
 for tone as a short `tone_notes` string (e.g. "shortened opening sentence, \
 removed a stock transition").
 
+Formatting: if this section's heading is about a set of distinct measures, \
+steps, initiatives, or developments (rather than a single continuous \
+narrative), structure the body as a markdown numbered list — one entry per \
+distinct point, each starting with a short bold label (e.g. "1. \
+**Strengthening the National Investigation Agency (NIA)** — ...") followed \
+by 1-3 sentences of supported detail. Otherwise write normal prose \
+paragraphs; don't force a list onto a section that's naturally narrative.
+
 Also return `claim_ids`: the IDs of every claim from the supplied list that \
 you actually used and verified the section's content against.
 

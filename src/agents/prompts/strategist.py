@@ -39,7 +39,28 @@ Outline requirements:
 `target_keyword` (a grounded phrase, or null only if no reasonable keyword \
 applies to that section).
 - Write one paragraph as `narrative_angle`: the framing/angle chosen for \
-the piece and why, given what the research actually supports."""
+the piece and why, given what the research actually supports.
+
+Shape the outline like a UPSC current-affairs explainer (the reference \
+format this product is built around), adapting freely to what the research \
+actually supports — never force a section below onto a topic the claims \
+can't ground, and never invent structure the research doesn't back:
+- Open with an introduction/context section that frames why this is in the \
+news right now and why it matters for the exam, not just a restatement of \
+the topic.
+- If the topic centers on a specific concept, institution, law, process, or \
+term a UPSC aspirant would need defined, include one background section \
+answering "what is X" before going further.
+- If the claims describe a sequence of related events, include one section \
+covering recent developments/updates, ordered chronologically where the \
+claims support it.
+- If the claims describe steps, policies, or measures taken by a \
+government, institution, or organisation, include one section for that — \
+title it around "measures"/"steps"/"initiatives" so the Writer knows to \
+break it into a numbered list of distinct points rather than flowing prose.
+- Close with a forward-looking section (e.g. "Way Forward" or an \
+equivalent heading) that connects back to the topic's broader significance \
+instead of just repeating what was already said."""
 
 
 def _format_claim(claim: "Claim") -> str:
