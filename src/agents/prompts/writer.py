@@ -106,3 +106,77 @@ def build_length_repair_prompt(min_words: int, actual_words: int) -> str:
         "Expand it with more supported detail from the available claims (do not pad with filler or repeat "
         "earlier sections) and return the complete corrected section in the same JSON shape as before."
     )
+
+
+# --- edit_section ---------------------------------------------------------
+
+EDIT_SECTION_SYSTEM = """You are rewriting a single section of an already-published blog article, \
+given the fixed outline, the full set of pre-researched claims, the rest of the article for context, \
+the section's current text, and a specific rewrite instruction. Do three things, in order, within your \
+own reasoning before responding:
+
+1. REWRITE: Rewrite the section's body in markdown following the rewrite instruction, staying consistent \
+with the outline and with the rest of the article (given to you as "draft so far") — don't repeat points \
+already made elsewhere, and don't contradict other sections.
+
+2. SELF-FACT-CHECK: Check every factual statement in your rewrite against the supplied claims. Keep only \
+statements directly supported by at least one claim. If you wrote something you can't verify, either \
+remove it or rephrase around it — do not delete the whole section over one unverifiable detail. List any \
+factual gaps you wanted to cover but couldn't verify as `unsupported_gaps` (short phrases, empty list if \
+none).
+
+3. HUMANIZE: Ensure natural tone, varied sentence length, no stock AI transitions or filler phrases. \
+Report what you changed for tone as a short `tone_notes` string.
+
+Also return `claim_ids`: the IDs of every claim from the supplied list that you actually used and \
+verified the rewritten section's content against.
+
+Return only the section's own body — not the heading as a markdown title, and not any other section's \
+content."""
+
+
+EDIT_PRESET_INSTRUCTIONS: dict[str, str] = {
+    "more_engaging": (
+        "Make this section more engaging: add a stronger hook, vary sentence rhythm, and use more vivid, "
+        "concrete language while keeping every claim factually supported."
+    ),
+    "more_formal": (
+        "Make this section more formal: use precise, neutral language, avoid contractions and casual "
+        "phrasing, and tighten the structure — while keeping the same factual content."
+    ),
+    "more_comprehensive": (
+        "Make this section more comprehensive: cover additional supported detail from the available "
+        "claims that isn't already used elsewhere in the article, without padding or repeating other "
+        "sections."
+    ),
+}
+
+
+def build_edit_section_user_prompt(
+    topic: str,
+    audience_tag: str | None,
+    outline: list["OutlineSection"],
+    claims: list["Claim"],
+    draft_so_far: str,
+    section: "OutlineSection",
+    current_body_markdown: str,
+    instruction: str,
+) -> str:
+    lines = [f"Topic: {topic}"]
+    if audience_tag:
+        lines.append(f"Audience tag: {audience_tag}")
+
+    lines.append("\nFull article outline (for context — rewrite only the marked section):")
+    lines.extend(_format_outline_entry(s, is_current=s.section_id == section.section_id) for s in outline)
+
+    lines.append(f"\nAvailable claims ({len(claims)} total, cite only what you use):")
+    lines.extend(_format_claim(c) for c in claims)
+
+    lines.append("\nDraft so far (every other current section of the article, in order):")
+    lines.append(draft_so_far if draft_so_far.strip() else "(no other sections)")
+
+    lines.append(f"\nCurrent text of the section to rewrite (\"{section.heading}\", section_id={section.section_id}):")
+    lines.append(current_body_markdown)
+
+    lines.append(f"\nRewrite instruction: {instruction}")
+    return "\n".join(lines)

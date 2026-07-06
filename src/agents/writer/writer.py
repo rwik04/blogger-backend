@@ -19,7 +19,8 @@ import logging
 import os
 from typing import Any
 
-from agents.writer.models import WriterInput, WriterOutput
+from agents.writer.models import EditSectionInput, WriterInput, WriterOutput
+from agents.writer.nodes.edit_section import edit_section
 from agents.writer.pipeline import build_writer_graph
 from db.engine import get_engine
 from db.repositories.writer_repository import WriterRepository
@@ -86,6 +87,33 @@ class Writer:
 
         await asyncio.to_thread(self._repo.set_run_status, input.run_id, "done")
         return WriterOutput.model_validate(final_state["output"])
+
+    async def edit_section(self, input: EditSectionInput) -> WriterOutput:
+        """Rewrites a single section of the run's latest draft with a tone
+        preset or custom instruction, persisting the result as a new draft
+        version. No `blog_runs.status` transition — this is a lightweight,
+        one-shot operation on top of an already-completed Writer run, not a
+        full pipeline pass.
+        """
+        output = await edit_section(
+            llm_client=self._llm_client,
+            repo=self._repo,
+            input=input,
+            reasoning_effort=self._reasoning_effort,
+            emitter=self._emit_event_async,
+        )
+        await asyncio.to_thread(
+            self._repo.emit_event,
+            input.run_id,
+            "section_edit",
+            "done",
+            {
+                "section_id": input.section_id,
+                "preset": input.preset.value,
+                "new_draft_version": output.draft_version,
+            },
+        )
+        return output
 
     async def _emit_event_async(
         self, run_id: str | None, step: str, phase: str, detail: dict[str, Any] | None

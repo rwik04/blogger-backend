@@ -6,7 +6,9 @@ draft+fact-check+humanize LLM call.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from enum import Enum
+
+from pydantic import BaseModel, model_validator
 
 from agents.researcher.models import ResearchBrief
 from agents.schema_base import StrictSchema
@@ -53,6 +55,35 @@ class WriterOutput(BaseModel):
     gap after exhausting retries, or that failed outright — escalation
     signal for a future Supervisor -> Researcher follow-up loop (no
     Supervisor exists yet, so this is populated but not acted upon)."""
+
+
+class EditPreset(str, Enum):
+    """Fixed tone-shift instructions for a one-off section rewrite, plus a
+    `custom` escape hatch for a caller-supplied instruction. Non-custom
+    presets may still carry an optional extra `instruction` (appended as
+    additional guidance on top of the preset's fixed instruction)."""
+
+    MORE_ENGAGING = "more_engaging"
+    MORE_FORMAL = "more_formal"
+    MORE_COMPREHENSIVE = "more_comprehensive"
+    CUSTOM = "custom"
+
+
+class EditSectionInput(BaseModel):
+    run_id: str
+    topic: str
+    audience_tag: str | None = None
+    research_brief: ResearchBrief
+    strategist_output: StrategistOutput
+    section_id: str
+    preset: EditPreset
+    instruction: str | None = None
+
+    @model_validator(mode="after")
+    def _custom_requires_instruction(self) -> "EditSectionInput":
+        if self.preset is EditPreset.CUSTOM and not (self.instruction and self.instruction.strip()):
+            raise ValueError("instruction is required when preset='custom'")
+        return self
 
 
 # --- Internal structured-output schema for write_section --------------------

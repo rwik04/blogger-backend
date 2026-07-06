@@ -22,114 +22,21 @@ consecutive full-section failure raises, which `with_events` turns into a
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any, Awaitable
+from typing import Any
 
-from agents.prompts.writer import (
-    WRITE_SECTION_SYSTEM,
-    build_gap_repair_prompt,
-    build_length_repair_prompt,
-    build_write_section_user_prompt,
-)
+from agents.prompts.writer import build_write_section_user_prompt, WRITE_SECTION_SYSTEM
 from agents.researcher.models import Claim
 from agents.strategist.models import OutlineSection
-from agents.writer.models import DraftedSection, SectionResult
+from agents.writer.models import SectionResult
+from agents.writer.nodes.drafting import draft_with_retries, word_count as _word_count
 from graph.engine import NodeFn
 from graph.events import EventEmitter
 from llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
 
-_MAX_GAP_RETRIES = 2
-_MAX_LENGTH_RETRIES = 1
-_MIN_WORD_COUNT = 50
 _MAX_CONSECUTIVE_FAILURES = 2
-
-
-def _word_count(text: str) -> int:
-    return len(text.split())
-
-
-async def _maybe_await(value: Awaitable[None] | None) -> None:
-    if value is not None and hasattr(value, "__await__"):
-        await value
-
-
-async def _emit_retry(
-    emitter: EventEmitter | None,
-    run_id: str | None,
-    section_index: int,
-    total_sections: int,
-    attempt: int,
-    max_attempts: int,
-    reason: str,
-) -> None:
-    if emitter is None:
-        return
-    detail = {
-        "section_index": section_index,
-        "total_sections": total_sections,
-        "attempt": attempt,
-        "max_attempts": max_attempts,
-        "reason": reason,
-    }
-    await _maybe_await(emitter(run_id, "section_retry", "info", detail))
-
-
-async def _draft_with_retries(
-    llm_client: LLMClient,
-    messages: list[dict[str, Any]],
-    reasoning_effort: str | None,
-    emitter: EventEmitter | None,
-    run_id: str | None,
-    section_index: int,
-    total_sections: int,
-) -> tuple[DraftedSection, int]:
-    """Runs the initial draft call, then the two independent retry loops.
-    Returns the final `DraftedSection` and the total number of retries used
-    (gap-retries + length-retries combined, 0-3).
-    """
-    drafted: DraftedSection = await asyncio.to_thread(llm_client.reason, messages, DraftedSection, reasoning_effort)
-    retries_used = 0
-
-    gap_attempt = 0
-    while drafted.unsupported_gaps and gap_attempt < _MAX_GAP_RETRIES:
-        gap_attempt += 1
-        retries_used += 1
-        await _emit_retry(
-            emitter,
-            run_id,
-            section_index,
-            total_sections,
-            gap_attempt,
-            _MAX_GAP_RETRIES,
-            f"reworking unverifiable claim(s): {'; '.join(drafted.unsupported_gaps)}",
-        )
-        messages.append({"role": "assistant", "content": drafted.model_dump_json()})
-        messages.append({"role": "user", "content": build_gap_repair_prompt(drafted.unsupported_gaps)})
-        drafted = await asyncio.to_thread(llm_client.reason, messages, DraftedSection, reasoning_effort)
-
-    length_attempt = 0
-    word_count = _word_count(drafted.body_markdown)
-    while word_count < _MIN_WORD_COUNT and length_attempt < _MAX_LENGTH_RETRIES:
-        length_attempt += 1
-        retries_used += 1
-        await _emit_retry(
-            emitter,
-            run_id,
-            section_index,
-            total_sections,
-            length_attempt,
-            _MAX_LENGTH_RETRIES,
-            f"section too short ({word_count} words, minimum {_MIN_WORD_COUNT})",
-        )
-        messages.append({"role": "assistant", "content": drafted.model_dump_json()})
-        messages.append({"role": "user", "content": build_length_repair_prompt(_MIN_WORD_COUNT, word_count)})
-        drafted = await asyncio.to_thread(llm_client.reason, messages, DraftedSection, reasoning_effort)
-        word_count = _word_count(drafted.body_markdown)
-
-    return drafted, retries_used
 
 
 def make_write_section_node(
@@ -163,7 +70,7 @@ def make_write_section_node(
         ]
 
         try:
-            drafted, retries_used = await _draft_with_retries(
+            drafted, retries_used = await draft_with_retries(
                 llm_client, messages, reasoning_effort, emitter, run_id, index, total_sections
             )
         except Exception as exc:
