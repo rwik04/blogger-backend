@@ -16,19 +16,16 @@ from sqlalchemy import func, insert, select
 from agents.researcher.models import ResearchBrief
 from agents.strategist.models import StrategistOutput
 from db.repositories.base import BaseAgentRepository
+from db.repositories.errors import ResearchBriefNotFoundError, StrategistOutputNotFoundError
 from db.tables import agent_steps, blog_drafts, blog_section_claims, blog_sections
 
+__all__ = [
+    "WriterRepository",
+    "ResearchBriefNotFoundError",
+    "StrategistOutputNotFoundError",
+]
+
 logger = logging.getLogger(__name__)
-
-
-class ResearchBriefNotFoundError(Exception):
-    """Raised when a `run_id` has no persisted `agent_steps` row for the Researcher."""
-
-
-class StrategistOutputNotFoundError(Exception):
-    """Raised when a `run_id` has no persisted `agent_steps` row for the Strategist —
-    i.e. `strategize`/`agents.strategist` hasn't successfully completed for this run yet.
-    """
 
 
 class WriterRepository(BaseAgentRepository):
@@ -47,6 +44,71 @@ class WriterRepository(BaseAgentRepository):
                 f"No persisted Strategist output for run_id={run_id!r} — run the Strategist agent first"
             )
         return StrategistOutput.model_validate(output)
+
+    def load_latest_draft(self, run_id: str) -> dict[str, Any] | None:
+        """The most recent `blog_drafts` row for `run_id` plus its ordered
+        `blog_sections` (each with its `blog_section_claims`), or `None` if
+        the Writer hasn't produced a draft yet. Used by `edit_section` to
+        find the current text of every section (the one being rewritten,
+        plus every other one needed for `draft_so_far` context).
+        """
+        with self._engine.begin() as conn:
+            draft_row = (
+                conn.execute(
+                    select(blog_drafts.c.id, blog_drafts.c.version, blog_drafts.c.created_by_agent)
+                    .where(blog_drafts.c.run_id == run_id)
+                    .order_by(blog_drafts.c.version.desc())
+                    .limit(1)
+                )
+                .mappings()
+                .first()
+            )
+            if draft_row is None:
+                return None
+
+            section_rows = (
+                conn.execute(
+                    select(blog_sections)
+                    .where(blog_sections.c.draft_id == draft_row["id"])
+                    .order_by(blog_sections.c.order_index.asc())
+                )
+                .mappings()
+                .all()
+            )
+
+            sections: list[dict[str, Any]] = []
+            for section_row in section_rows:
+                claim_rows = conn.execute(
+                    select(blog_section_claims.c.claim_id).where(
+                        blog_section_claims.c.section_id == section_row["id"]
+                    )
+                ).all()
+                section = dict(section_row)
+                section["claim_ids"] = [row[0] for row in claim_rows]
+                sections.append(section)
+
+        return {
+            "draft_id": draft_row["id"],
+            "version": draft_row["version"],
+            "created_by_agent": draft_row["created_by_agent"],
+            "sections": sections,
+        }
+
+    def list_drafts(self, run_id: str) -> list[dict[str, Any]]:
+        """Draft version history for `run_id`, newest first — backs
+        `GET /runs/{run_id}/write/drafts`.
+        """
+        with self._engine.begin() as conn:
+            rows = (
+                conn.execute(
+                    select(blog_drafts.c.version, blog_drafts.c.created_by_agent, blog_drafts.c.created_at)
+                    .where(blog_drafts.c.run_id == run_id)
+                    .order_by(blog_drafts.c.version.desc())
+                )
+                .mappings()
+                .all()
+            )
+        return [dict(row) for row in rows]
 
     def get_next_draft_version(self, run_id: str) -> int:
         """1 for a run's first draft, otherwise one more than the highest

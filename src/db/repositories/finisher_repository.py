@@ -18,23 +18,14 @@ from agents.researcher.models import ResearchBrief
 from agents.strategist.models import StrategistOutput
 from agents.writer.models import WriterOutput
 from db.repositories.base import BaseAgentRepository
+from db.repositories.errors import (
+    ResearchBriefNotFoundError,
+    StrategistOutputNotFoundError,
+    WriterOutputNotFoundError,
+)
 from db.tables import agent_steps, media_assets, published_blogs, quiz_questions, seo_audits
 
 logger = logging.getLogger(__name__)
-
-
-class ResearchBriefNotFoundError(Exception):
-    """Raised when a `run_id` has no persisted `agent_steps` row for the Researcher."""
-
-
-class StrategistOutputNotFoundError(Exception):
-    """Raised when a `run_id` has no persisted `agent_steps` row for the Strategist."""
-
-
-class WriterOutputNotFoundError(Exception):
-    """Raised when a `run_id` has no persisted `agent_steps` row for the Writer —
-    i.e. `write`/`agents.writer` hasn't successfully completed for this run yet.
-    """
 
 
 class FinisherRepository(BaseAgentRepository):

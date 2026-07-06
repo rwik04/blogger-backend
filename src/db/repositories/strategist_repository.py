@@ -15,17 +15,12 @@ from sqlalchemy import insert
 
 from agents.researcher.models import ResearchBrief
 from db.repositories.base import BaseAgentRepository, RunNotFoundError
+from db.repositories.errors import ResearchBriefNotFoundError
 from db.tables import agent_steps, outline_sections, seo_plans
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["StrategistRepository", "RunNotFoundError", "ResearchBriefNotFoundError"]
-
-
-class ResearchBriefNotFoundError(Exception):
-    """Raised when a `run_id` has no persisted `agent_steps` row for the Researcher —
-    i.e. `research`/`agents.researcher` hasn't successfully completed for this run yet.
-    """
 
 
 class StrategistRepository(BaseAgentRepository):

@@ -16,6 +16,8 @@ from sqlalchemy import Engine, insert, select, update
 
 from db.tables import agent_events, agent_steps, blog_runs
 
+_DEFAULT_EVENTS_LIMIT = 50
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +59,29 @@ class BaseAgentRepository:
                 .first()
             )
         return row["output"] if row is not None else None
+
+    def list_events(self, run_id: str, limit: int = _DEFAULT_EVENTS_LIMIT) -> list[dict[str, Any]]:
+        """Most recent `agent_events` rows for `run_id`, newest first — the
+        per-node `started`/`done`/`failed` progress trail every agent already
+        writes via `emit_event`, surfaced for the API's polling endpoint.
+        """
+        with self._engine.begin() as conn:
+            rows = (
+                conn.execute(
+                    select(
+                        agent_events.c.step,
+                        agent_events.c.phase,
+                        agent_events.c.detail,
+                        agent_events.c.created_at,
+                    )
+                    .where(agent_events.c.run_id == run_id)
+                    .order_by(agent_events.c.created_at.desc())
+                    .limit(limit)
+                )
+                .mappings()
+                .all()
+            )
+        return [dict(row) for row in rows]
 
     def set_run_status(self, run_id: str, status: str) -> None:
         try:
