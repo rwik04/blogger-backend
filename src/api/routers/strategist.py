@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from agents.strategist.models import StrategistInput, StrategistOutput
 from agents.strategist.strategist import Strategist
+from api.concurrency import run_sync
 from api.deps import get_strategist, get_strategist_repo
 from api.jobs import run_and_log
 from api.schemas import QueuedResponse, StrategizeRequest
@@ -26,8 +27,8 @@ async def start_strategize(
     strategist: Strategist = Depends(get_strategist),
     repo: StrategistRepository = Depends(get_strategist_repo),
 ) -> QueuedResponse:
-    run = repo.get_run(run_id)  # 404 if the run doesn't exist at all
-    research_brief = repo.load_research_brief(run_id)  # 409 if Researcher hasn't completed
+    run = await run_sync(repo.get_run, run_id)  # 404 if the run doesn't exist at all
+    research_brief = await run_sync(repo.load_research_brief, run_id)  # 409 if Researcher hasn't completed
 
     audience_tag = body.audience_tag or run.get("audience_tag")
     strategist_input = StrategistInput(
@@ -47,8 +48,8 @@ async def start_strategize(
 async def get_strategize(
     run_id: str, repo: StrategistRepository = Depends(get_strategist_repo)
 ) -> StrategistOutput:
-    repo.get_run(run_id)
-    output = repo.load_agent_output(run_id, "strategist")
+    await run_sync(repo.get_run, run_id)
+    output = await run_sync(repo.load_agent_output, run_id, "strategist")
     if output is None:
         raise StrategistOutputNotFoundError(
             f"No persisted Strategist output for run_id={run_id!r} — run the Strategist agent first"

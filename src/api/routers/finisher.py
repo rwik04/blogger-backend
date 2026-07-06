@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from agents.finisher.finisher import Finisher
 from agents.finisher.models import FinisherInput, FinisherOutput
+from api.concurrency import run_sync
 from api.deps import get_finisher, get_finisher_repo
 from api.jobs import run_and_log
 from api.schemas import FinishRequest, QueuedResponse
@@ -36,10 +37,10 @@ async def start_finish(
     finisher: Finisher = Depends(get_finisher),
     repo: FinisherRepository = Depends(get_finisher_repo),
 ) -> QueuedResponse:
-    run = repo.get_run(run_id)  # 404 if the run doesn't exist at all
-    research_brief = repo.load_research_brief(run_id)  # 409 if Researcher hasn't completed
-    strategist_output = repo.load_strategist_output(run_id)  # 409 if Strategist hasn't completed
-    writer_output = repo.load_writer_output(run_id)  # 409 if Writer hasn't completed
+    run = await run_sync(repo.get_run, run_id)  # 404 if the run doesn't exist at all
+    research_brief = await run_sync(repo.load_research_brief, run_id)  # 409 if Researcher hasn't completed
+    strategist_output = await run_sync(repo.load_strategist_output, run_id)  # 409 if Strategist hasn't completed
+    writer_output = await run_sync(repo.load_writer_output, run_id)  # 409 if Writer hasn't completed
 
     include_quiz = body.include_quiz if body.include_quiz is not None else _env_bool(
         "FINISHER_GENERATE_QUIZ", True
@@ -61,8 +62,8 @@ async def start_finish(
 
 @router.get("/runs/{run_id}/finish", response_model=FinisherOutput)
 async def get_finish(run_id: str, repo: FinisherRepository = Depends(get_finisher_repo)) -> FinisherOutput:
-    repo.get_run(run_id)
-    output = repo.load_agent_output(run_id, "finisher")
+    await run_sync(repo.get_run, run_id)
+    output = await run_sync(repo.load_agent_output, run_id, "finisher")
     if output is None:
         raise FinisherOutputNotFoundError(
             f"No persisted Finisher output for run_id={run_id!r} — run the Finisher agent first"

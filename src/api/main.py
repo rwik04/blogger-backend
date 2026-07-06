@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from agents.finisher.finisher import Finisher
@@ -30,6 +32,7 @@ from agents.strategist.strategist import Strategist
 from agents.topic_generator.topic_generator import TopicGenerator
 from agents.writer.writer import Writer
 from api.routers import finisher, research, resources, runs, strategist, topics, writer
+from api.supervisor import PipelineSupervisor
 from db.engine import get_engine, warm_pool
 from db.repositories.base import RunNotFoundError
 from db.repositories.errors import (
@@ -44,6 +47,22 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Every blocking repository call in every route handler goes through
+    # `asyncio.to_thread` (see `api/concurrency.py`), which by default runs
+    # on `asyncio`'s default executor — capped at `min(32, cpu_count + 4)`
+    # workers. That's smaller than `DB_POOL_SIZE + DB_POOL_MAX_OVERFLOW`
+    # connections the DB pool can actually hand out, so under concurrent
+    # load requests were queuing for a free *thread* well before they'd ever
+    # queue for a free *connection*. Size the executor to the DB pool
+    # instead of Python's generic default.
+    from db.settings import DatabaseSettings
+
+    db_settings = DatabaseSettings.from_env()
+    executor_size = max(db_settings.pool_size + db_settings.max_overflow, 8)
+    asyncio.get_event_loop().set_default_executor(
+        ThreadPoolExecutor(max_workers=executor_size, thread_name_prefix="db-worker")
+    )
+
     # Build (and warm) the pooled DB engine first, before anything else
     # touches it — `get_engine()` is process-wide/`lru_cache`d, so every
     # repository built later (per-request, in `api.deps`) reuses this same
@@ -61,10 +80,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.writer = Writer.from_env()
     app.state.finisher = Finisher.from_env()
     app.state.topic_generator = TopicGenerator.from_env()
+    app.state.supervisor = PipelineSupervisor(
+        researcher=app.state.researcher,
+        strategist=app.state.strategist,
+        writer=app.state.writer,
+        finisher=app.state.finisher,
+    )
     yield
 
 
 app = FastAPI(title="Blogger Pipeline API", lifespan=lifespan)
+
+# The frontend (Next.js dev server) calls this API directly from the
+# browser, so it needs an explicit allow-list rather than the default
+# same-origin-only behavior. Kept to local dev origins since there's no
+# auth layer to protect against a wildcard origin abusing cookies/etc.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(RunNotFoundError)

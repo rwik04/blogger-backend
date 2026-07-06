@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, literal, select, union_all
 
 from db.tables import (
     blog_drafts,
@@ -48,6 +48,7 @@ class ResourcesRepository:
             blog_runs.c.topic,
             blog_runs.c.audience_tag,
             blog_runs.c.status,
+            blog_runs.c.paused,
             blog_runs.c.created_at,
         ).order_by(blog_runs.c.created_at.desc())
         if status is not None:
@@ -59,25 +60,32 @@ class ResourcesRepository:
         return [dict(row) for row in rows]
 
     def count_resources(self) -> dict[str, int]:
-        counts: dict[str, int] = {}
+        """One round trip instead of seven: each table's count used to be its
+        own separate query in the same connection, and against a high-latency
+        remote DB that's ~7x the round-trip cost for what's fundamentally one
+        logical "give me all the dashboard counts" read. `UNION ALL` folds
+        every count into a single statement/round trip.
+        """
+        selects = [
+            select(literal(name).label("name"), func.count().label("count")).select_from(table)
+            for name, table in _COUNTED_TABLES.items()
+        ]
+        selects.append(
+            select(
+                literal("published_blogs_staged").label("name"),
+                func.count().label("count"),
+            ).select_from(published_blogs).where(published_blogs.c.published_at.is_(None))
+        )
+        selects.append(
+            select(
+                literal("published_blogs_published").label("name"),
+                func.count().label("count"),
+            ).select_from(published_blogs).where(published_blogs.c.published_at.is_not(None))
+        )
+
         with self._engine.begin() as conn:
-            for name, table in _COUNTED_TABLES.items():
-                counts[name] = conn.execute(select(func.count()).select_from(table)).scalar_one()
-
-            staged = conn.execute(
-                select(func.count())
-                .select_from(published_blogs)
-                .where(published_blogs.c.published_at.is_(None))
-            ).scalar_one()
-            published = conn.execute(
-                select(func.count())
-                .select_from(published_blogs)
-                .where(published_blogs.c.published_at.is_not(None))
-            ).scalar_one()
-
-        counts["published_blogs_staged"] = staged
-        counts["published_blogs_published"] = published
-        return counts
+            rows = conn.execute(union_all(*selects)).all()
+        return {name: count for name, count in rows}
 
     def get_full_blog(self, run_id: str) -> dict[str, Any] | None:
         """The fully assembled, publish-ready blog for `run_id`: staged
@@ -117,14 +125,22 @@ class ResourcesRepository:
                     .mappings()
                     .all()
                 )
-                for section_row in section_rows:
+                section_ids = [row["id"] for row in section_rows]
+                # One query for every section's claim_ids instead of one
+                # query per section (N+1) — grouped back out in Python.
+                claims_by_section: dict[Any, list[Any]] = {sid: [] for sid in section_ids}
+                if section_ids:
                     claim_rows = conn.execute(
-                        select(blog_section_claims.c.claim_id).where(
-                            blog_section_claims.c.section_id == section_row["id"]
+                        select(blog_section_claims.c.section_id, blog_section_claims.c.claim_id).where(
+                            blog_section_claims.c.section_id.in_(section_ids)
                         )
                     ).all()
+                    for section_id, claim_id in claim_rows:
+                        claims_by_section[section_id].append(claim_id)
+
+                for section_row in section_rows:
                     section = dict(section_row)
-                    section["claim_ids"] = [row[0] for row in claim_rows]
+                    section["claim_ids"] = claims_by_section[section_row["id"]]
                     sections.append(section)
 
             questions = [

@@ -151,7 +151,13 @@ class WriterRepository(BaseAgentRepository):
                         unsupported_gaps=section["unsupported_gaps"],
                     )
                 )
-                for claim_id in section["claim_ids"]:
+                # `claim_ids` comes straight from the per-section LLM call and can
+                # legitimately repeat the same claim (cited more than once in the
+                # body) — dedupe before inserting since (section_id, claim_id) is
+                # the table's primary key, or a repeat blows up the whole
+                # transaction with a UniqueViolation (seen in production: a
+                # Writer run failed at `persist_draft` for exactly this reason).
+                for claim_id in dict.fromkeys(section["claim_ids"]):
                     conn.execute(
                         insert(blog_section_claims).values(
                             section_id=section_row_id,

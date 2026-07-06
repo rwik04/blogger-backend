@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from agents.writer.models import EditSectionInput, WriterInput, WriterOutput
 from agents.writer.writer import Writer
+from api.concurrency import run_sync
 from api.deps import get_writer, get_writer_repo
 from api.jobs import run_and_log
 from api.schemas import DraftsResponse, DraftSummary, EditSectionRequest, QueuedResponse
@@ -26,9 +27,9 @@ async def start_write(
     writer: Writer = Depends(get_writer),
     repo: WriterRepository = Depends(get_writer_repo),
 ) -> QueuedResponse:
-    run = repo.get_run(run_id)  # 404 if the run doesn't exist at all
-    research_brief = repo.load_research_brief(run_id)  # 409 if Researcher hasn't completed
-    strategist_output = repo.load_strategist_output(run_id)  # 409 if Strategist hasn't completed
+    run = await run_sync(repo.get_run, run_id)  # 404 if the run doesn't exist at all
+    research_brief = await run_sync(repo.load_research_brief, run_id)  # 409 if Researcher hasn't completed
+    strategist_output = await run_sync(repo.load_strategist_output, run_id)  # 409 if Strategist hasn't completed
 
     writer_input = WriterInput(
         run_id=run_id,
@@ -44,8 +45,8 @@ async def start_write(
 
 @router.get("/runs/{run_id}/write", response_model=WriterOutput)
 async def get_write(run_id: str, repo: WriterRepository = Depends(get_writer_repo)) -> WriterOutput:
-    repo.get_run(run_id)
-    output = repo.load_agent_output(run_id, "writer")
+    await run_sync(repo.get_run, run_id)
+    output = await run_sync(repo.load_agent_output, run_id, "writer")
     if output is None:
         raise WriterOutputNotFoundError(
             f"No persisted Writer output for run_id={run_id!r} — run the Writer agent first"
@@ -55,8 +56,8 @@ async def get_write(run_id: str, repo: WriterRepository = Depends(get_writer_rep
 
 @router.get("/runs/{run_id}/write/drafts", response_model=DraftsResponse)
 async def get_write_drafts(run_id: str, repo: WriterRepository = Depends(get_writer_repo)) -> DraftsResponse:
-    repo.get_run(run_id)
-    drafts = repo.list_drafts(run_id)
+    await run_sync(repo.get_run, run_id)
+    drafts = await run_sync(repo.list_drafts, run_id)
     return DraftsResponse(run_id=run_id, drafts=[DraftSummary(**draft) for draft in drafts])
 
 
@@ -73,11 +74,11 @@ async def edit_section_route(
     writer: Writer = Depends(get_writer),
     repo: WriterRepository = Depends(get_writer_repo),
 ) -> QueuedResponse:
-    run = repo.get_run(run_id)
-    research_brief = repo.load_research_brief(run_id)
-    strategist_output = repo.load_strategist_output(run_id)
+    run = await run_sync(repo.get_run, run_id)
+    research_brief = await run_sync(repo.load_research_brief, run_id)
+    strategist_output = await run_sync(repo.load_strategist_output, run_id)
 
-    latest_draft = repo.load_latest_draft(run_id)
+    latest_draft = await run_sync(repo.load_latest_draft, run_id)
     if latest_draft is None:
         raise WriterOutputNotFoundError(
             f"No persisted draft for run_id={run_id!r} — run the Writer agent first"
