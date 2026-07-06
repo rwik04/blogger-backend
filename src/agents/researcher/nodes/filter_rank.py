@@ -56,10 +56,12 @@ def make_filter_rank_node() -> NodeFn:
             for h in kept
         ]
 
+        summary = f"Kept {len(kept)} of {len(candidates)} candidate sources this round"
         return {
             "round_hits": kept,
             "sources": existing_sources + new_sources,
-            "round_summary_note": f"Kept {len(kept)} of {len(candidates)} candidate sources this round",
+            "round_summary_note": summary,
+            "_event_summary": summary,
         }
 
     return node

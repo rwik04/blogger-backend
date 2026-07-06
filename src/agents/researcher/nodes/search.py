@@ -15,6 +15,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+from agents.shared.event_text import preview_queries
 from agents.researcher.state import RawSearchHit
 from graph.engine import ItemFn, NodeFn
 from mcpclient.client import MCPClient, extract_text
@@ -151,11 +152,25 @@ def make_search_subquery_fn(mcp_client: MCPClient) -> ItemFn:
     return search_one
 
 
+def summarize_search_round(state: dict[str, Any], result: dict[str, Any]) -> str:
+    """Human-readable "what am I researching right now" line for the
+    `search_round` step's `done` event — surfaces the actual sub-queries the
+    Researcher is running, not just a node name, per the dashboard's agent
+    log needing that context.
+    """
+    round_results: list[dict[str, Any]] = result.get("round_search_results", [])
+    queries = [r["sub_query"] for r in round_results]
+    total_hits = sum(len(r.get("hits", [])) for r in round_results)
+    preview = preview_queries(queries)
+    return f'Researching: {preview} — {total_hits} result(s) across {len(queries)} quer{"y" if len(queries) == 1 else "ies"}'
+
+
 def make_selective_scrape_node(mcp_client: MCPClient) -> NodeFn:
     async def node(state: dict[str, Any]) -> dict[str, Any]:
         hits: list[RawSearchHit] = state.get("round_hits", [])
         to_scrape = [h for h in hits if h["needs_scrape"]][:_MAX_SCRAPES_PER_ROUND]
 
+        scraped_ok = 0
         for hit in to_scrape:
             try:
                 result = await mcp_client.call_tool("crawling_exa", {"url": hit["url"]})
@@ -163,9 +178,15 @@ def make_selective_scrape_node(mcp_client: MCPClient) -> NodeFn:
                 if text.strip():
                     hit["content"] = text
                     hit["needs_scrape"] = False
+                    scraped_ok += 1
             except Exception as exc:
                 logger.warning("crawling_exa failed for %s: %s", hit["url"], exc)
 
-        return {"round_hits": hits}
+        summary = (
+            f"Scraped {scraped_ok}/{len(to_scrape)} thin source(s) for full content"
+            if to_scrape
+            else "No sources needed scraping — search results had enough inline content"
+        )
+        return {"round_hits": hits, "_event_summary": summary}
 
     return node

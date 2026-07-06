@@ -12,12 +12,17 @@ Named `pipeline.py`, not `graph.py`, for the same reason as the Researcher's
 
 from __future__ import annotations
 
+from typing import Any
+
 from agents.topic_generator.nodes.build_queries import make_build_queries_node
 from agents.topic_generator.nodes.classify import make_classify_node
 from agents.topic_generator.nodes.dedup_filter import make_dedup_filter_node, route_after_dedup
 from agents.topic_generator.nodes.extract_candidates import make_extract_candidates_node
 from agents.topic_generator.nodes.persist import make_persist_node
-from agents.topic_generator.nodes.search_candidates import make_search_query_fn
+from agents.topic_generator.nodes.search_candidates import (
+    make_search_query_fn,
+    summarize_search_candidates,
+)
 from db.repositories.topic_repository import TopicRepository
 from graph.engine import END, CompiledGraph, Graph, build_fanout_node
 from graph.events import EventEmitter, with_events
@@ -37,6 +42,17 @@ def build_topic_generator_graph(
     def wrap(name: str, fn):
         return with_events(name, fn, emitter) if emitter is not None else with_events(name, fn)
 
+    def with_summary(fn, summary_fn):
+        async def wrapped(state: dict[str, Any]) -> dict[str, Any] | None:
+            result = await fn(state)
+            if result is not None:
+                summary = summary_fn(state, result)
+                if summary:
+                    result = {**result, "_event_summary": summary}
+            return result
+
+        return wrapped
+
     graph = Graph()
 
     graph.add_node("build_queries", wrap("build_queries", make_build_queries_node(llm_client)))
@@ -48,7 +64,10 @@ def build_topic_generator_graph(
         result_key="search_rounds",
         max_concurrency=_SEARCH_CONCURRENCY,
     )
-    graph.add_node("search_candidates", wrap("search_candidates", search_candidates_fn))
+    graph.add_node(
+        "search_candidates",
+        wrap("search_candidates", with_summary(search_candidates_fn, summarize_search_candidates)),
+    )
 
     graph.add_node(
         "extract_candidates",

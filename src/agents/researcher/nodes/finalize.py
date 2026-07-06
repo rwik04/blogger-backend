@@ -23,7 +23,8 @@ def make_finalize_brief_node() -> NodeFn:
             sources=state.get("sources", []),
             claims=state.get("claims", []),
         )
-        return {"brief": brief.model_dump(), "status": "extracted"}
+        summary = f"Finalized brief: {len(brief.sources)} source(s), {len(brief.claims)} claim(s)"
+        return {"brief": brief.model_dump(), "status": "extracted", "_event_summary": summary}
 
     return node
 

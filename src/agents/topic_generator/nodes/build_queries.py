@@ -12,6 +12,7 @@ import asyncio
 from typing import Any
 
 from agents.prompts.topic_generator import QUERY_EXPANSION_SYSTEM, build_query_expansion_user_prompt
+from agents.shared.event_text import preview_queries
 from agents.topic_generator.models import ExpandedQueries, TopicGeneratorMode, UpscSubject
 from graph.engine import NodeFn
 from llm.client import LLMClient
@@ -41,7 +42,8 @@ def make_build_queries_node(llm_client: LLMClient) -> NodeFn:
 
         if mode is TopicGeneratorMode.AUTONOMOUS:
             queries = _autonomous_queries()
-            return {"queries": queries, "_event_summary": f"Built {len(queries)} subject-rotation queries"}
+            summary = f"Built {len(queries)} subject-rotation queries: {preview_queries(queries)}"
+            return {"queries": queries, "_event_summary": summary}
 
         user_instruction = state["user_instruction"]
         messages = [
@@ -50,6 +52,7 @@ def make_build_queries_node(llm_client: LLMClient) -> NodeFn:
         ]
         result: ExpandedQueries = await asyncio.to_thread(llm_client.reason, messages, ExpandedQueries)
         queries = list(result.queries)
-        return {"queries": queries, "_event_summary": f"Expanded instruction into {len(queries)} queries"}
+        summary = f"Expanded instruction into {len(queries)} queries: {preview_queries(queries)}"
+        return {"queries": queries, "_event_summary": summary}
 
     return node

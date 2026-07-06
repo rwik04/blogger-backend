@@ -68,7 +68,9 @@ def make_write_report_node(llm_client: LLMClient) -> NodeFn:
         sources_section = _build_sources_section(sources, citation_numbers)
         brief["report_markdown"] = f"{narrative.strip()}\n\n{sources_section}\n"
 
-        return {"brief": brief}
+        word_count = len(narrative.split())
+        summary = f"Wrote {word_count}-word narrative report citing {len(sources)} source(s)"
+        return {"brief": brief, "_event_summary": summary}
 
     return node
 

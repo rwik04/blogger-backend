@@ -14,6 +14,7 @@ def make_persist_brief_node(repo: ResearchRepository) -> NodeFn:
     async def node(state: dict[str, Any]) -> dict[str, Any]:
         brief = state["brief"]
         await asyncio.to_thread(repo.save_research_brief, brief)
-        return {"status": "done"}
+        summary = f"Saved research brief ({len(brief.get('sources', []))} source(s)) to the database"
+        return {"status": "done", "_event_summary": summary}
 
     return node

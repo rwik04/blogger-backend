@@ -30,7 +30,11 @@ from agents.researcher.nodes.finalize import make_fail_step_node, make_finalize_
 from agents.researcher.nodes.persist import make_persist_brief_node
 from agents.researcher.nodes.plan_queries import make_plan_queries_node
 from agents.researcher.nodes.reflect_coverage import make_reflect_coverage_node
-from agents.researcher.nodes.search import make_search_subquery_fn, make_selective_scrape_node
+from agents.researcher.nodes.search import (
+    make_search_subquery_fn,
+    make_selective_scrape_node,
+    summarize_search_round,
+)
 from agents.researcher.nodes.write_report import make_write_report_node
 from db.repositories.research_repository import ResearchRepository
 from graph.engine import END, CompiledGraph, Graph, build_fanout_node
@@ -74,6 +78,17 @@ def build_researcher_graph(
     def wrap(name: str, fn):
         return with_events(name, fn, emitter) if emitter is not None else with_events(name, fn)
 
+    def with_summary(fn, summary_fn):
+        async def wrapped(state: dict[str, Any]) -> dict[str, Any] | None:
+            result = await fn(state)
+            if result is not None:
+                summary = summary_fn(state, result)
+                if summary:
+                    result = {**result, "_event_summary": summary}
+            return result
+
+        return wrapped
+
     graph = Graph()
 
     graph.add_node("plan_queries", wrap("plan_queries", make_plan_queries_node(llm_client)))
@@ -84,7 +99,7 @@ def build_researcher_graph(
         result_key="round_search_results",
         max_concurrency=_SEARCH_CONCURRENCY,
     )
-    graph.add_node("search_round", wrap("search_round", search_round_fn))
+    graph.add_node("search_round", wrap("search_round", with_summary(search_round_fn, summarize_search_round)))
     graph.add_node("filter_rank", wrap("filter_rank", make_filter_rank_node()))
     graph.add_node("selective_scrape", wrap("selective_scrape", make_selective_scrape_node(mcp_client)))
     graph.add_node("compact_round", wrap("compact_round", make_compact_round_node(llm_client)))

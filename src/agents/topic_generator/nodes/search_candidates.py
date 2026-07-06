@@ -14,6 +14,7 @@ import logging
 import re
 from typing import Any
 
+from agents.shared.event_text import preview_queries
 from graph.engine import ItemFn
 from mcp.types import CallToolResult
 from mcpclient.client import MCPClient, extract_text
@@ -106,3 +107,13 @@ def make_search_query_fn(mcp_client: MCPClient) -> ItemFn:
         return {"query": query, "hits": _parse_light_hits(result)}
 
     return search_one
+
+
+def summarize_search_candidates(state: dict[str, Any], result: dict[str, Any]) -> str:
+    """"What am I searching for right now" line for `search_candidates`'
+    `done` event, mirroring `agents.researcher.nodes.search.summarize_search_round`."""
+    rounds: list[dict[str, Any]] = result.get("search_rounds", [])
+    queries = [r["query"] for r in rounds]
+    total_hits = sum(len(r.get("hits", [])) for r in rounds)
+    preview = preview_queries(queries)
+    return f'Scanning: {preview} — {total_hits} result(s) across {len(queries)} quer{"y" if len(queries) == 1 else "ies"}'

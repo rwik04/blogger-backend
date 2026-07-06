@@ -66,7 +66,7 @@ def make_compact_round_node(llm_client: LLMClient) -> NodeFn:
     async def node(state: dict[str, Any]) -> dict[str, Any]:
         hits: list[RawSearchHit] = state.get("round_hits", [])
         if not hits:
-            return {"round_hits": []}
+            return {"round_hits": [], "_event_summary": "No new sources to compact this round"}
 
         messages = [
             {"role": "system", "content": COMPACT_ROUND_SYSTEM},
@@ -74,6 +74,7 @@ def make_compact_round_node(llm_client: LLMClient) -> NodeFn:
         ]
         result: RoundCompaction = await asyncio.to_thread(llm_client.reason, messages, RoundCompaction)
 
+        claims_before = len(state.get("claims", []))
         claims = _merge_claims(state.get("claims", []), result.claims)
 
         summaries = dict(state.get("source_summaries", {}))
@@ -84,6 +85,10 @@ def make_compact_round_node(llm_client: LLMClient) -> NodeFn:
             "claims": claims,
             "source_summaries": summaries,
             "round_hits": [],  # raw text discarded here — never crosses into the next round
+            "_event_summary": (
+                f"Extracted {len(result.claims)} claim(s) from {len(hits)} source(s) "
+                f"({len(claims) - claims_before} new, {len(claims)} total)"
+            ),
         }
 
     return node
