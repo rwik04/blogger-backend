@@ -45,10 +45,13 @@ removed a stock transition").
 Formatting: if this section's heading is about a set of distinct measures, \
 steps, initiatives, or developments (rather than a single continuous \
 narrative), structure the body as a markdown numbered list — one entry per \
-distinct point, each starting with a short bold label (e.g. "1. \
-**Strengthening the National Investigation Agency (NIA)** — ...") followed \
-by 1-3 sentences of supported detail. Otherwise write normal prose \
-paragraphs; don't force a list onto a section that's naturally narrative.
+distinct point, each starting with a short bold label, followed by 1-3 \
+sentences of supported detail. Number the items in actual sequential \
+order — "1. **First point** — ...", "2. **Second point** — ...", "3. \
+**Third point** — ..." and so on. Never reuse "1." for every item; each \
+list marker must be one higher than the last. Otherwise write normal \
+prose paragraphs; don't force a list onto a section that's naturally \
+narrative.
 
 Also return `claim_ids`: the IDs of every claim from the supplied list that \
 you actually used and verified the section's content against.
@@ -125,7 +128,9 @@ own reasoning before responding:
 
 1. REWRITE: Rewrite the section's body in markdown following the rewrite instruction, staying consistent \
 with the outline and with the rest of the article (given to you as "draft so far") — don't repeat points \
-already made elsewhere, and don't contradict other sections.
+already made elsewhere, and don't contradict other sections. If the section is a set of distinct measures, \
+steps, initiatives, or developments, format it as a numbered list with actual sequential markers ("1.", \
+"2.", "3." and so on — never "1." repeated for every item); otherwise keep it as normal prose.
 
 2. SELF-FACT-CHECK: Check every factual statement in your rewrite against the supplied claims. Keep only \
 statements directly supported by at least one claim. If you wrote something you can't verify, either \

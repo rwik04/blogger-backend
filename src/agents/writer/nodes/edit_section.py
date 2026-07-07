@@ -166,3 +166,65 @@ async def edit_section(
     )
 
     return output
+
+
+async def manual_edit_section(repo: WriterRepository, run_id: str, section_id: str, body_markdown: str) -> WriterOutput:
+    """Directly overwrites a section's body with reviewer-supplied text — no
+    LLM call, no fact-check/humanize pass. Persists as a new draft version
+    through the same `save_writer_output` path as an AI edit, so draft
+    history/versioning stays consistent regardless of who (or what) made
+    the change.
+    """
+    latest_draft = await asyncio.to_thread(repo.load_latest_draft, run_id)
+    if latest_draft is None:
+        raise WriterOutputNotFoundError(f"No persisted draft for run_id={run_id!r} — run the Writer agent first")
+
+    current_sections: list[dict[str, Any]] = latest_draft["sections"]
+    target_index = next((i for i, s in enumerate(current_sections) if s["section_id"] == section_id), None)
+    if target_index is None:
+        raise SectionNotFoundError(f"section_id={section_id!r} not found in latest draft (run_id={run_id!r})")
+
+    all_sections: list[SectionResult] = []
+    needs_more_research: list[str] = []
+    for i, s in enumerate(current_sections):
+        if i == target_index:
+            edited = SectionResult(
+                section_id=s["section_id"],
+                heading=s["heading"],
+                body_markdown=body_markdown,
+                claim_ids=s.get("claim_ids", []),
+                unsupported_gaps=[],  # manual edit supersedes the fact-check pass that produced these
+                tone_notes="Manually edited",
+                word_count=_word_count(body_markdown),
+                retries_used=s.get("retries_used") or 0,
+            )
+            all_sections.append(edited)
+        else:
+            existing = SectionResult(
+                section_id=s["section_id"],
+                heading=s["heading"],
+                body_markdown=s["body_markdown"],
+                claim_ids=s.get("claim_ids", []),
+                unsupported_gaps=s.get("unsupported_gaps") or [],
+                tone_notes=s.get("tone_notes") or "",
+                word_count=s.get("word_count") or _word_count(s["body_markdown"]),
+                retries_used=s.get("retries_used") or 0,
+            )
+            all_sections.append(existing)
+            needs_more_research.extend(f"{existing.section_id}: {gap}" for gap in existing.unsupported_gaps)
+
+    draft_version = await asyncio.to_thread(repo.get_next_draft_version, run_id)
+    output = WriterOutput(
+        run_id=run_id,
+        draft_version=draft_version,
+        sections=all_sections,
+        needs_more_research=needs_more_research,
+    )
+
+    await asyncio.to_thread(repo.save_writer_output, output.model_dump())
+
+    logger.info(
+        "Manually edited section_id=%s for run_id=%s (new_draft_version=%d)", section_id, run_id, draft_version
+    )
+
+    return output

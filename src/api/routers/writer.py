@@ -13,7 +13,7 @@ from agents.writer.writer import Writer
 from api.concurrency import run_sync
 from api.deps import get_writer, get_writer_repo
 from api.jobs import run_and_log
-from api.schemas import DraftsResponse, DraftSummary, EditSectionRequest, QueuedResponse
+from api.schemas import DraftsResponse, DraftSummary, EditSectionRequest, ManualEditSectionRequest, QueuedResponse
 from db.repositories.errors import SectionNotFoundError, WriterOutputNotFoundError
 from db.repositories.writer_repository import WriterRepository
 
@@ -103,3 +103,21 @@ async def edit_section_route(
         f"Writer.edit_section(run_id={run_id}, section_id={section_id})",
     )
     return QueuedResponse(run_id=run_id)
+
+
+@router.put(
+    "/runs/{run_id}/write/sections/{section_id}",
+    response_model=WriterOutput,
+)
+async def manual_edit_section_route(
+    run_id: str,
+    section_id: str,
+    body: ManualEditSectionRequest,
+    writer: Writer = Depends(get_writer),
+    repo: WriterRepository = Depends(get_writer_repo),
+) -> WriterOutput:
+    # No LLM call here — just a direct overwrite, so unlike the AI-edit
+    # route above this runs synchronously and returns the updated output
+    # right away instead of a 202-queued background task.
+    await run_sync(repo.get_run, run_id)
+    return await writer.manual_edit_section(run_id, section_id, body.body_markdown)

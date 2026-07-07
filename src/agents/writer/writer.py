@@ -20,7 +20,7 @@ import os
 from typing import Any
 
 from agents.writer.models import EditSectionInput, WriterInput, WriterOutput
-from agents.writer.nodes.edit_section import edit_section
+from agents.writer.nodes.edit_section import edit_section, manual_edit_section
 from agents.writer.pipeline import build_writer_graph
 from db.engine import get_engine
 from db.repositories.writer_repository import WriterRepository
@@ -112,6 +112,22 @@ class Writer:
                 "preset": input.preset.value,
                 "new_draft_version": output.draft_version,
             },
+        )
+        return output
+
+    async def manual_edit_section(self, run_id: str, section_id: str, body_markdown: str) -> WriterOutput:
+        """Directly overwrites a section's text with reviewer-supplied
+        markdown — no LLM call. Persisted as a new draft version, same as
+        `edit_section`, so it shows up in draft history and the next
+        `GET /write` poll picks it up.
+        """
+        output = await manual_edit_section(self._repo, run_id, section_id, body_markdown)
+        await asyncio.to_thread(
+            self._repo.emit_event,
+            run_id,
+            "section_edit",
+            "done",
+            {"section_id": section_id, "preset": "manual", "new_draft_version": output.draft_version},
         )
         return output
 

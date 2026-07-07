@@ -92,6 +92,16 @@ class EditSectionRequest(BaseModel):
         return self
 
 
+class ManualEditSectionRequest(BaseModel):
+    body_markdown: str
+
+    @model_validator(mode="after")
+    def _body_not_blank(self) -> "ManualEditSectionRequest":
+        if not self.body_markdown.strip():
+            raise ValueError("body_markdown must not be blank")
+        return self
+
+
 class StatsResponse(BaseModel):
     runs_by_status: dict[str, int]
     resource_counts: dict[str, int]
