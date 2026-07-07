@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -91,15 +92,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Blogger Pipeline API", lifespan=lifespan)
 
-# The frontend (Next.js dev server) calls this API directly from the
-# browser, so it needs an explicit allow-list rather than the default
-# same-origin-only behavior. Kept to local dev origins since there's no
-# auth layer to protect against a wildcard origin abusing cookies/etc.
+# The frontend calls this API directly from the browser, so it needs an
+# explicit allow-list rather than the default same-origin-only behavior.
+# Local dev origins are always allowed; extra origins (e.g. the deployed
+# frontend's public URL) can be added via CORS_EXTRA_ORIGINS without a
+# code change.
+_extra_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        *_extra_origins,
     ],
     allow_methods=["*"],
     allow_headers=["*"],
