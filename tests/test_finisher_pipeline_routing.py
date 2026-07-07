@@ -6,24 +6,35 @@ from agents.finisher.models import (
     DraftedQuestion,
     DraftedQuestionSet,
     DraftedStatement,
+    QuizRelevanceAssessment,
 )
 from agents.finisher.pipeline import build_finisher_graph
 
 
 class _StubLLMClient:
-    def __init__(self, quiz_should_be_called: bool):
+    def __init__(self, quiz_should_be_called: bool, quiz_relevant: bool = True):
         self.quiz_should_be_called = quiz_should_be_called
+        self.quiz_relevant = quiz_relevant
         self.called_schemas: list[type] = []
 
     def reason(self, messages, schema, reasoning_effort=None):
         self.called_schemas.append(schema)
 
+        if schema is QuizRelevanceAssessment:
+            return QuizRelevanceAssessment(
+                quiz_relevant=self.quiz_relevant,
+                reason="Specific figures and named entities throughout."
+                if self.quiz_relevant
+                else "Mostly narrative framing, nothing concrete to test.",
+            )
+
         if schema is DraftedQuestionSet:
             if not self.quiz_should_be_called:
-                raise AssertionError("Quiz LLM call happened even though include_quiz=False")
+                raise AssertionError("Quiz LLM call happened even though it shouldn't have")
             return DraftedQuestionSet(
                 questions=[
                     DraftedQuestion(
+                        question_type="statement_based",
                         stem="Consider the following statements:",
                         statements=[
                             DraftedStatement(
@@ -37,6 +48,7 @@ class _StubLLMClient:
                                 claim_id="claim-2",
                             ),
                         ],
+                        answer_options=[],
                         explanation="Per the claims above.",
                         related_section_id="intro",
                     )
@@ -156,6 +168,7 @@ def test_include_quiz_false_skips_quiz_llm_call_entirely():
 
     final_state = asyncio.run(graph.arun(_base_state(include_quiz=False)))
 
+    assert QuizRelevanceAssessment not in llm_client.called_schemas
     assert DraftedQuestionSet not in llm_client.called_schemas
     assert DraftedMediaPlan in llm_client.called_schemas
     assert final_state["output"]["questions"] == []
@@ -163,12 +176,28 @@ def test_include_quiz_false_skips_quiz_llm_call_entirely():
 
 
 def test_include_quiz_true_runs_the_full_quiz_pipeline():
-    llm_client = _StubLLMClient(quiz_should_be_called=True)
+    llm_client = _StubLLMClient(quiz_should_be_called=True, quiz_relevant=True)
     repo = _StubFinisherRepository()
     graph = build_finisher_graph(llm_client, repo, reasoning_effort="medium")
 
     final_state = asyncio.run(graph.arun(_base_state(include_quiz=True)))
 
+    assert QuizRelevanceAssessment in llm_client.called_schemas
     assert DraftedQuestionSet in llm_client.called_schemas
     assert len(final_state["output"]["questions"]) >= 1
+    assert repo.saved_output is not None
+
+
+def test_quiz_relevant_false_skips_candidate_generation():
+    llm_client = _StubLLMClient(quiz_should_be_called=False, quiz_relevant=False)
+    repo = _StubFinisherRepository()
+    graph = build_finisher_graph(llm_client, repo, reasoning_effort="medium")
+
+    final_state = asyncio.run(graph.arun(_base_state(include_quiz=True)))
+
+    assert QuizRelevanceAssessment in llm_client.called_schemas
+    assert DraftedQuestionSet not in llm_client.called_schemas
+    assert DraftedMediaPlan in llm_client.called_schemas
+    assert final_state["output"]["questions"] == []
+    assert any("not relevant" in flag for flag in final_state["output"]["quality_flags"])
     assert repo.saved_output is not None

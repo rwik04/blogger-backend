@@ -49,7 +49,7 @@ def _option_table(statement_count: int) -> dict[tuple[bool, ...], str] | None:
     return None
 
 
-def assemble_question(candidate: dict[str, Any]) -> UpscStyleQuestion | None:
+def _assemble_statement_based(candidate: dict[str, Any]) -> UpscStyleQuestion | None:
     """Returns the assembled `UpscStyleQuestion`, or `None` if the
     candidate's true/false pattern has no entry in the lookup table.
     Distractors are simply the lookup table's other 3 values — by
@@ -76,6 +76,7 @@ def assemble_question(candidate: dict[str, Any]) -> UpscStyleQuestion | None:
 
     return UpscStyleQuestion(
         question_id=str(uuid.uuid4()),
+        question_type="statement_based",
         stem=candidate["stem"],
         statements=[MCQStatement.model_validate(s) for s in statements],
         options=options,
@@ -83,6 +84,38 @@ def assemble_question(candidate: dict[str, Any]) -> UpscStyleQuestion | None:
         explanation=candidate["explanation"],
         related_section_id=candidate["related_section_id"],
     )
+
+
+def _assemble_direct(candidate: dict[str, Any]) -> UpscStyleQuestion | None:
+    """A `"direct"` question's options are already the LLM's own answer
+    choices (validated in `nodes.validate_questions`) — no combination
+    lookup needed, just shuffle labels onto them and read off which one was
+    tagged correct."""
+    answer_options = candidate["answer_options"]
+    labels = _OPTION_LABELS[: len(answer_options)].copy()
+    random.shuffle(labels)
+
+    options = [MCQOption(label=label, text=opt["text"]) for label, opt in zip(labels, answer_options)]
+    correct_index = next((i for i, opt in enumerate(answer_options) if opt["is_correct"]), None)
+    if correct_index is None:
+        return None
+
+    return UpscStyleQuestion(
+        question_id=str(uuid.uuid4()),
+        question_type="direct",
+        stem=candidate["stem"],
+        statements=[],
+        options=options,
+        correct_option=options[correct_index].label,
+        explanation=candidate["explanation"],
+        related_section_id=candidate["related_section_id"],
+    )
+
+
+def assemble_question(candidate: dict[str, Any]) -> UpscStyleQuestion | None:
+    if candidate["question_type"] == "direct":
+        return _assemble_direct(candidate)
+    return _assemble_statement_based(candidate)
 
 
 def select_questions(

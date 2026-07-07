@@ -17,6 +17,16 @@ from agents.strategist.models import StrategistOutput
 from agents.writer.models import WriterOutput
 
 
+QuestionType = Literal["statement_based", "direct"]
+"""`statement_based` is the classic UPSC prelims format (FINISHER.md §1):
+2-3 numbered statements, combination-style options. `direct` is a plain
+single-answer MCQ — a straightforward question with independent answer
+choices, one correct — better suited to a single checkable fact (a count,
+a date, a named entity) than to a fabricated multi-statement wrapper.
+Which type fits depends on the underlying claim, so `generate_candidate_questions`
+produces a mix rather than defaulting every question to one format."""
+
+
 class MCQOption(BaseModel):
     label: str
     text: str
@@ -30,13 +40,17 @@ class MCQStatement(BaseModel):
 
 class UpscStyleQuestion(BaseModel):
     question_id: str
+    question_type: QuestionType
     stem: str
     statements: list[MCQStatement]
+    """Only populated for `question_type="statement_based"` — empty for
+    `"direct"` questions, which have no numbered statements to display."""
     options: list[MCQOption]
     correct_option: str
-    """The label (a/b/c/d) of the option matching the statements' true/false
-    pattern — derived deterministically in `nodes.assemble_questions`, never
-    asked from the LLM."""
+    """The label (a/b/c/d) of the correct option — for `statement_based`,
+    derived from the statements' true/false pattern; for `direct`, the
+    option the LLM tagged `is_correct`. Either way, assembled in
+    `nodes.assemble_questions`, never asked from the LLM directly as a label."""
     explanation: str
     related_section_id: str
 
@@ -100,9 +114,35 @@ class FinisherOutput(BaseModel):
 # --- Internal structured-output schemas --------------------------------
 
 
+class QuizRelevanceAssessment(StrictSchema):
+    """Output of the `assess_quiz_relevance` LLM call — a gate that runs
+    before candidate-question generation, deciding whether the topic's
+    actual researched claims have enough concrete, checkable factual
+    density to support a good statement-based quiz at all (as opposed to
+    forcing one onto a narrative/opinion-heavy piece)."""
+
+    quiz_relevant: bool
+    reason: str
+
+
 class DraftedStatement(StrictSchema):
     text: str
     is_true: bool
+    claim_id: str | None
+
+
+class DraftedAnswerOption(StrictSchema):
+    """One answer choice for a `"direct"`-type candidate question — plain
+    text plus whether it's the correct one, mirroring `DraftedStatement`'s
+    true/false tagging but for independent answer choices rather than
+    numbered statements. `claim_id` is required by every candidate's
+    grounded-vs-not schema so OpenAI's strict JSON mode has one consistent
+    shape; it's expected to be `null` on distractors that don't cite a
+    specific claim (a plausible invented wrong answer needs no grounding —
+    only the correct option does, checked in `nodes.validate_questions`)."""
+
+    text: str
+    is_correct: bool
     claim_id: str | None
 
 
@@ -111,10 +151,17 @@ class DraftedQuestion(StrictSchema):
     `correct_option`/`question_id` yet; those are assembled deterministically
     in `nodes.assemble_questions` after `nodes.validate_questions` filters
     the candidate pool.
+
+    Exactly one of `statements` / `answer_options` is populated, matching
+    `question_type` — both fields are always present (OpenAI's strict JSON
+    mode requires every field, no true optionality) with the unused one an
+    empty list.
     """
 
+    question_type: QuestionType
     stem: str
     statements: list[DraftedStatement]
+    answer_options: list[DraftedAnswerOption]
     explanation: str
     related_section_id: str
 

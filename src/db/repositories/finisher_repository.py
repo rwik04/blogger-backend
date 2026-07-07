@@ -74,6 +74,7 @@ class FinisherRepository(BaseAgentRepository):
                     insert(quiz_questions).values(
                         id=question["question_id"],
                         run_id=run_id,
+                        question_type=question.get("question_type", "statement_based"),
                         stem=question["stem"],
                         statements=question["statements"],
                         options=question["options"],

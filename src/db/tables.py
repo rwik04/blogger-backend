@@ -180,6 +180,7 @@ quiz_questions = Table(
     metadata,
     Column("id", String, primary_key=True),
     Column("run_id", String, ForeignKey("blog_runs.id"), nullable=False),
+    Column("question_type", String, nullable=False, server_default="statement_based"),
     Column("stem", Text, nullable=False),
     Column("statements", JSON, nullable=False),
     Column("options", JSON, nullable=False),

@@ -1,10 +1,14 @@
-"""Builds the Finisher `CompiledGraph` — linear aside from one quiz on/off
-branch. FINISHER.md's quiz "retry" mechanism is over-generation plus
+"""Builds the Finisher `CompiledGraph` — linear aside from two quiz on/off
+branches: the user/config toggle (`include_quiz`), then a relevance gate
+that decides whether the topic's claims actually support a good quiz at
+all. FINISHER.md's quiz "retry" mechanism is over-generation plus
 drop-on-failure rather than iterative repair, so no loop is needed here,
 unlike the Writer's per-section loop:
 
-    audit_seo --(include_quiz)--> generate_candidate_questions -> validate_questions
-        -> assemble_questions -> plan_media -> fetch_media_images -> persist_finisher -> END
+    audit_seo --(include_quiz)--> assess_quiz_relevance
+        --(quiz_relevant)--> generate_candidate_questions -> validate_questions
+            -> assemble_questions -> plan_media -> fetch_media_images -> persist_finisher -> END
+        --(not quiz_relevant)--> plan_media -> fetch_media_images -> persist_finisher -> END
     audit_seo --(not include_quiz)--> plan_media -> fetch_media_images -> persist_finisher -> END
 """
 
@@ -13,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from agents.finisher.nodes.assemble_questions import make_assemble_questions_node
+from agents.finisher.nodes.assess_quiz_relevance import make_assess_quiz_relevance_node
 from agents.finisher.nodes.audit_seo import make_audit_seo_node
 from agents.finisher.nodes.fetch_media_images import make_fetch_media_images_node
 from agents.finisher.nodes.generate_candidate_questions import make_generate_candidate_questions_node
@@ -27,7 +32,11 @@ from media.image_search import ImageSearchClient
 
 
 def _route_after_audit(state: dict[str, Any]) -> str:
-    return "generate_candidate_questions" if state.get("include_quiz", True) else "plan_media"
+    return "assess_quiz_relevance" if state.get("include_quiz", True) else "plan_media"
+
+
+def _route_after_relevance(state: dict[str, Any]) -> str:
+    return "generate_candidate_questions" if state.get("quiz_relevant", True) else "plan_media"
 
 
 def build_finisher_graph(
@@ -42,6 +51,10 @@ def build_finisher_graph(
 
     graph = Graph()
     graph.add_node("audit_seo", wrap("audit_seo", make_audit_seo_node()))
+    graph.add_node(
+        "assess_quiz_relevance",
+        wrap("assess_quiz_relevance", make_assess_quiz_relevance_node(llm_client, reasoning_effort)),
+    )
     graph.add_node(
         "generate_candidate_questions",
         wrap(
@@ -59,6 +72,7 @@ def build_finisher_graph(
 
     graph.set_entry("audit_seo")
     graph.add_conditional_edge("audit_seo", _route_after_audit)
+    graph.add_conditional_edge("assess_quiz_relevance", _route_after_relevance)
     graph.add_edge("generate_candidate_questions", "validate_questions")
     graph.add_edge("validate_questions", "assemble_questions")
     graph.add_edge("assemble_questions", "plan_media")

@@ -16,19 +16,111 @@ if TYPE_CHECKING:
     from agents.strategist.models import OutlineSection, SeoPlan
     from agents.writer.models import SectionResult
 
+
+def _format_claim(claim: "Claim") -> str:
+    flag = " [CONTRADICTED]" if claim.contradicted else ""
+    return f"- [{claim.id}]{flag} {claim.text}"
+
+
+def _format_section(section: "OutlineSection") -> str:
+    return f"- [{section.section_id}] {section.heading}"
+
+
+# --- assess_quiz_relevance --------------------------------------------------
+
+ASSESS_QUIZ_RELEVANCE_SYSTEM = """You decide whether an article's content actually supports a good \
+UPSC prelims-style objective quiz, before any quiz is generated.
+
+UPSC prelims MCQs are statement-based and need concrete, checkable facts to \
+work: specific numbers, dates, named entities (people/places/organizations/ \
+schemes), definitions, categorical classifications, or step-by-step \
+processes. A topic built from these can produce statements that are \
+unambiguously true or false against the source material.
+
+Some topics genuinely can't support this well, even with a fully accurate, \
+well-written article: pieces that are mostly narrative, personal opinion, \
+human-interest framing, diplomatic goodwill language ("India lauds...", \
+"leaders reaffirmed friendship..."), or general commentary without hard, \
+verifiable specifics. Forcing statement-based questions onto this kind of \
+content produces either trivial statements or statements that quietly \
+overreach what the claims actually support — worse than not having a quiz \
+at all.
+
+Look at the topic, the article's section headings, and the actual \
+researched claims. Decide `quiz_relevant`: true only if there's enough \
+concrete, checkable factual density across the claims (numbers, dates, \
+named entities, defined terms, or a clear process/sequence) to write \
+several defensible true/false statements without inventing detail beyond \
+what's given. Otherwise false.
+
+Write a one-sentence `reason` either way — if false, name what's missing \
+(e.g. "mostly diplomatic goodwill language, no concrete figures or named \
+mechanisms to test"); if true, name what supports it (e.g. "specific dates, \
+named institutions, and numeric figures throughout")."""
+
+
+def build_assess_quiz_relevance_user_prompt(
+    topic: str,
+    audience_tag: str | None,
+    outline: list["OutlineSection"],
+    claims: list["Claim"],
+) -> str:
+    lines = [f"Topic: {topic}"]
+    if audience_tag:
+        lines.append(f"Audience tag: {audience_tag}")
+
+    lines.append("\nArticle sections:")
+    lines.extend(_format_section(s) for s in outline)
+
+    lines.append(f"\nResearched claims ({len(claims)} total):")
+    lines.extend(_format_claim(c) for c in claims)
+
+    return "\n".join(lines)
+
+
 # --- generate_candidate_questions -------------------------------------------
 
-GENERATE_CANDIDATES_SYSTEM = """You write UPSC prelims-style multiple-choice questions from a set of \
+GENERATE_CANDIDATES_SYSTEM = """You write exam-style multiple-choice questions from a set of \
 pre-researched, verified claims about an article's content.
 
-UPSC prelims MCQs are overwhelmingly statement-based: 2-3 numbered \
-statements are presented, and the question asks "Which of the statements \
-given above is/are correct?" — you do not write the answer options \
-yourself (those are assembled separately); you only write the statements \
-themselves, each individually tagged true or false, plus which claim (by \
-its ID) each statement is based on.
+Write a MIX of two question types across the candidates you generate — do \
+not make every question the same type. Pick whichever type actually fits \
+each claim best:
 
-For each candidate question:
+- `"direct"` — a plain, single-answer question with independent answer \
+choices, e.g. "How many teams will compete in the 2026 FIFA World Cup?" \
+with choices like "32", "40", "48", "64". Use this for a claim that's a \
+single checkable fact: a count, a date, a named entity, a rate, a location. \
+Most claims are this shape, so most of your questions should be too.
+- `"statement_based"` — the classic UPSC-prelims format: 2-3 numbered \
+statements, and the question asks "Which of the statements given above \
+is/are correct?" (the answer options for this type are combination-style \
+like "1 and 3 only" and are assembled separately, not written by you). Use \
+this only when a claim actually involves multiple related sub-facts worth \
+testing together (e.g. several details about one scheme, or a \
+comparison) — don't force two unrelated claims into fake "statements" just \
+to use this format.
+
+For every candidate, regardless of type, set `question_type`, write a short \
+`explanation` grounded in the cited claim(s), and set `related_section_id` \
+to whichever article section the question is drawn from. Both `statements` \
+and `answer_options` are required fields on every candidate — populate \
+only the one matching `question_type` and leave the other as an empty list.
+
+For a `"direct"` question:
+- Write `stem` as the actual question, ending in "?" — not a lead-in \
+sentence like "Consider the following statements".
+- Write 3 or 4 `answer_options`. Exactly one has `is_correct: true`; it \
+must be a faithful, verbatim-or-near-verbatim fact from its cited \
+`claim_id` — don't invent a number or name the claims don't support.
+- The other options are plausible distractors: adjacent numbers, similar \
+names, or common misconceptions about the same topic. They should read as \
+genuinely tempting wrong answers, not obviously silly ones. Distractors \
+don't need to cite a claim (`claim_id: null` is fine for an invented \
+plausible-sounding wrong answer) — only the correct option must be grounded.
+- Do not write duplicate or near-duplicate answer choices.
+
+For a `"statement_based"` question:
 - Write a short `stem` introducing the topic of the statements (e.g. \
 "Consider the following statements about the tournament's format:").
 - Write 2 or 3 `statements`. Each one is a sentence that reads like an exam \
@@ -51,20 +143,8 @@ this matches how real UPSC statement sets are usually composed and how the \
 final answer options are structured.
 - Do not write duplicate or near-duplicate statements within the same \
 question.
-- Write a short `explanation` grounded in the cited claim(s), and set \
-`related_section_id` to whichever article section the question is drawn \
-from.
 
 Generate exactly the requested number of candidate questions."""
-
-
-def _format_claim(claim: "Claim") -> str:
-    flag = " [CONTRADICTED]" if claim.contradicted else ""
-    return f"- [{claim.id}]{flag} {claim.text}"
-
-
-def _format_section(section: "OutlineSection") -> str:
-    return f"- [{section.section_id}] {section.heading}"
 
 
 def build_generate_candidates_user_prompt(
@@ -84,7 +164,12 @@ def build_generate_candidates_user_prompt(
     lines.append(f"\nAvailable claims ({len(claims)} total):")
     lines.extend(_format_claim(c) for c in claims)
 
-    lines.append(f"\nGenerate exactly {candidate_count} candidate questions, spanning multiple sections where possible.")
+    lines.append(
+        f"\nGenerate exactly {candidate_count} candidate questions, spanning multiple sections where "
+        "possible and mixing both question types — lean towards \"direct\" questions for single-fact "
+        "claims, and reserve \"statement_based\" for claims that genuinely involve multiple related "
+        "sub-facts."
+    )
     return "\n".join(lines)
 
 

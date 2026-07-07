@@ -15,9 +15,24 @@ def _candidate(pattern, section_id="sec-1"):
         for i, is_true in enumerate(pattern)
     ]
     return {
+        "question_type": "statement_based",
         "stem": "Consider the following statements:",
         "statements": statements,
         "explanation": "Because of the claims.",
+        "related_section_id": section_id,
+    }
+
+
+def _direct_candidate(correct_index=0, option_count=3, section_id="sec-1"):
+    answer_options = [
+        {"text": f"Option {i + 1}", "is_correct": i == correct_index}
+        for i in range(option_count)
+    ]
+    return {
+        "question_type": "direct",
+        "stem": "How many teams will compete?",
+        "answer_options": answer_options,
+        "explanation": "Because of the claim.",
         "related_section_id": section_id,
     }
 
@@ -61,9 +76,21 @@ def test_distractors_are_always_the_other_three_never_the_correct_option():
         assert len(set(distractor_texts)) == 3
 
 
+def test_direct_candidate_assembles_with_correct_option_from_is_correct_tag():
+    for correct_index in range(3):
+        question = assemble_question(_direct_candidate(correct_index=correct_index))
+        assert question is not None
+        assert question.question_type == "direct"
+        assert question.statements == []
+        correct = next(o for o in question.options if o.label == question.correct_option)
+        assert correct.text == f"Option {correct_index + 1}"
+        assert len(question.options) == 3
+
+
 def _question(question_id: str, section_id: str) -> UpscStyleQuestion:
     return UpscStyleQuestion(
         question_id=question_id,
+        question_type="statement_based",
         stem="stem",
         statements=[],
         options=[],

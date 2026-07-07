@@ -41,6 +41,12 @@ these candidates are dropped (and logged) at validation time rather than
 silently disappearing during assembly."""
 
 
+_MIN_ANSWER_OPTIONS = 3
+_MAX_ANSWER_OPTIONS = 4
+"""A `"direct"` question needs at least 3 answer choices to be a real MCQ,
+and the assembled quiz UI shows a/b/c/d, so cap at 4 to match."""
+
+
 def _statement_words(text: str) -> list[str]:
     return _significant_words(text)
 
@@ -59,10 +65,7 @@ def _are_near_duplicates(words_a: list[str], words_b: list[str]) -> bool:
     return len(set_a & set_b) / len(set_a | set_b) >= _DUPLICATE_OVERLAP
 
 
-def validate_candidate(candidate: dict[str, Any], claims_by_id: dict[str, str]) -> str | None:
-    """Returns a failure reason string, or `None` if the candidate passes
-    every check and should survive to option assembly.
-    """
+def _validate_statement_based(candidate: dict[str, Any], claims_by_id: dict[str, str]) -> str | None:
     statements = candidate["statements"]
 
     if len(statements) not in (2, 3):
@@ -107,6 +110,50 @@ def validate_candidate(candidate: dict[str, Any], claims_by_id: dict[str, str]) 
             )
 
     return None
+
+
+def _validate_direct(candidate: dict[str, Any], claims_by_id: dict[str, str]) -> str | None:
+    options = candidate["answer_options"]
+
+    if not (_MIN_ANSWER_OPTIONS <= len(options) <= _MAX_ANSWER_OPTIONS):
+        return (
+            f"has {len(options)} answer option(s); need between "
+            f"{_MIN_ANSWER_OPTIONS} and {_MAX_ANSWER_OPTIONS}"
+        )
+
+    correct = [o for o in options if o["is_correct"]]
+    if len(correct) != 1:
+        return f"has {len(correct)} option(s) tagged correct; exactly 1 is required"
+
+    correct_option = correct[0]
+    claim_text = claims_by_id.get(correct_option["claim_id"])
+    if claim_text is None:
+        return f"correct option cites unknown claim_id {correct_option['claim_id']!r}"
+
+    correct_words = _statement_words(correct_option["text"])
+    overlap = _overlap_ratio(correct_words, set(_statement_words(claim_text)))
+    if overlap < _TRUE_MIN_OVERLAP:
+        return f"correct option doesn't closely match its cited claim (overlap={overlap:.2f}, need>={_TRUE_MIN_OVERLAP})"
+
+    option_words = [_statement_words(o["text"]) for o in options]
+    for i in range(len(option_words)):
+        for j in range(i + 1, len(option_words)):
+            if _are_near_duplicates(option_words[i], option_words[j]):
+                return f"options {i + 1} and {j + 1} are near-duplicates of each other"
+
+    return None
+
+
+def validate_candidate(candidate: dict[str, Any], claims_by_id: dict[str, str]) -> str | None:
+    """Returns a failure reason string, or `None` if the candidate passes
+    every check and should survive to option assembly. Dispatches on
+    `question_type` — `"statement_based"` reuses the original
+    statement/combination-option checks; `"direct"` checks the single
+    correct answer's grounding plus basic option hygiene.
+    """
+    if candidate["question_type"] == "direct":
+        return _validate_direct(candidate, claims_by_id)
+    return _validate_statement_based(candidate, claims_by_id)
 
 
 def make_validate_questions_node() -> NodeFn:
