@@ -27,6 +27,14 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
+def _dedupe(ids: list[str]) -> list[str]:
+    """Order-preserving dedupe — the LLM's per-claim `source_ids` occasionally
+    cites the same source twice for one claim (a citation slip, not a
+    signal), which would otherwise reach `research_claim_sources`, a table
+    keyed on `(claim_id, source_id)`, and violate its primary key."""
+    return list(dict.fromkeys(ids))
+
+
 def _merge_claims(existing: list[Claim], new_claims: list[ExtractedClaim]) -> list[Claim]:
     """Merges by normalized-text match: the same claim surfacing again with a
     new supporting source bumps confidence and appends the source id, rather
@@ -41,7 +49,7 @@ def _merge_claims(existing: list[Claim], new_claims: list[ExtractedClaim]) -> li
         key = _normalize(new_claim.text)
         if key in by_norm:
             current = by_norm[key]
-            merged_source_ids = list(dict.fromkeys(current.source_ids + new_claim.source_ids))
+            merged_source_ids = _dedupe(current.source_ids + new_claim.source_ids)
             by_norm[key] = current.model_copy(
                 update={
                     "source_ids": merged_source_ids,
@@ -53,7 +61,7 @@ def _merge_claims(existing: list[Claim], new_claims: list[ExtractedClaim]) -> li
             by_norm[key] = Claim(
                 id=f"claim-{next_id}",
                 text=new_claim.text,
-                source_ids=new_claim.source_ids,
+                source_ids=_dedupe(new_claim.source_ids),
                 confidence=new_claim.confidence,
                 contradicted=new_claim.contradicted,
             )

@@ -71,6 +71,7 @@ class ResearchRepository(BaseAgentRepository):
                         contradicted=claim["contradicted"],
                     )
                 )
+                seen_source_row_ids: set[str] = set()
                 for source_id in claim["source_ids"]:
                     mapped_source_row_id = source_id_map.get(source_id)
                     if mapped_source_row_id is None:
@@ -80,6 +81,13 @@ class ResearchRepository(BaseAgentRepository):
                             source_id,
                         )
                         continue
+                    if mapped_source_row_id in seen_source_row_ids:
+                        # A claim occasionally cites the same source twice (a
+                        # citation slip upstream, not a signal) — the table is
+                        # keyed on (claim_id, source_id), so inserting twice
+                        # would violate its primary key.
+                        continue
+                    seen_source_row_ids.add(mapped_source_row_id)
                     conn.execute(
                         insert(research_claim_sources).values(
                             claim_id=claim_row_id,
