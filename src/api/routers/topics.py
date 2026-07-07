@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 
 from agents.topic_generator.models import TopicGeneratorInput
 from agents.topic_generator.topic_generator import TopicGenerator
@@ -112,6 +112,12 @@ async def list_topics(
 async def get_topic(topic_id: str, repo: TopicRepository = Depends(get_topic_repo)) -> TopicOut:
     row = await run_sync(repo.get_topic, topic_id)
     return _to_topic_out(row)
+
+
+@router.delete("/topics/{topic_id}", status_code=204)
+async def delete_topic(topic_id: str, repo: TopicRepository = Depends(get_topic_repo)) -> Response:
+    await run_sync(repo.delete_topic, topic_id)  # 404s via TopicNotFoundError if missing
+    return Response(status_code=204)
 
 
 @router.post("/topics/{topic_id}/select", response_model=SelectTopicResponse, status_code=202)

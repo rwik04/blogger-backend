@@ -15,7 +15,7 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy import Engine, func, insert, select, text, update
+from sqlalchemy import Engine, delete, func, insert, select, text, update
 
 from db.repositories.errors import TopicBatchNotFoundError, TopicNotFoundError
 from db.tables import topic_batch_events, topic_batches, topics
@@ -185,3 +185,15 @@ class TopicRepository:
     def mark_topic_selected(self, topic_id: str) -> None:
         with self._engine.begin() as conn:
             conn.execute(update(topics).where(topics.c.id == topic_id).values(status="selected"))
+
+    def delete_topic(self, topic_id: str) -> None:
+        """Hard-delete a candidate from the `topics` table — used when a
+        reviewer rejects a suggestion from the dashboard queue. Selected
+        topics (referenced by `blog_runs.topic_id`) should never reach this
+        path from the UI, but the FK's default RESTRICT means an accidental
+        call here fails loudly instead of silently orphaning a run.
+        """
+        with self._engine.begin() as conn:
+            result = conn.execute(delete(topics).where(topics.c.id == topic_id))
+        if result.rowcount == 0:
+            raise TopicNotFoundError(f"No topics row for topic_id={topic_id!r}")
