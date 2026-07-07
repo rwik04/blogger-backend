@@ -1,0 +1,16 @@
+[Unit]
+Description=blogger-backend (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/blogger-backend
+# Adjust the uv path if `which uv` resolves elsewhere on your instance.
+ExecStart=/home/ubuntu/.local/bin/uv run python src/api/main.py
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=/home/ubuntu/blogger-backend/.env
+
+[Install]
+WantedBy=multi-user.target

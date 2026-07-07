@@ -1,0 +1,48 @@
+Sname: Deploy to EC2
+
+# SSH-based deploy: no AWS API calls, no long-lived AWS credentials — just a
+# private key that can log into the box. The server already has the repo
+# cloned and a systemd service configured; this workflow just pulls the
+# latest main, rebuilds the venv, runs pending DB migrations, and restarts
+# the service.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ vars.EC2_USER || 'ubuntu' }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          command_timeout: 15m
+          script_stop: true
+          script: |
+            set -euo pipefail
+            export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+            cd "${{ vars.BACKEND_DEPLOY_PATH || '/home/ubuntu/blogger-backend' }}"
+
+            echo "==> Fetching latest main"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "==> Syncing dependencies"
+            uv sync
+
+            echo "==> Running pending DB migrations"
+            uv run python -m db.migrate
+
+            echo "==> Restarting service"
+            sudo systemctl restart "${{ vars.BACKEND_SERVICE_NAME || 'blogger-backend' }}"
+            sleep 2
+            sudo systemctl status "${{ vars.BACKEND_SERVICE_NAME || 'blogger-backend' }}" --no-pager
