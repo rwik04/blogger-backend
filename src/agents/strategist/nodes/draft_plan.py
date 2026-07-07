@@ -26,6 +26,19 @@ logger = logging.getLogger(__name__)
 
 _MIN_OUTLINE_SECTIONS = 3
 _MAX_MISSING_KEYWORD_FRACTION = 0.5
+_MAX_KEYWORD_WORDS = 6
+"""Keywords are short SEO search phrases, not sentences — the prompt asks
+for this, but the model sometimes reaches for a full clause when a claim
+doesn't have an obvious short phrase inside it. Enforced here too so an
+over-long keyword triggers the same repair-retry path as any other
+business-rule violation, instead of silently shipping a "keyword" that's
+actually a headline."""
+
+
+def _overlong_keywords(plan: DraftedPlan) -> list[str]:
+    candidates = [plan.primary_keyword, *plan.secondary_keywords]
+    candidates.extend(section.target_keyword for section in plan.outline if section.target_keyword)
+    return [kw for kw in candidates if len(kw.split()) > _MAX_KEYWORD_WORDS]
 
 
 def check_business_rules(plan: DraftedPlan) -> str | None:
@@ -42,6 +55,15 @@ def check_business_rules(plan: DraftedPlan) -> str | None:
         return (
             f"{missing} of {len(plan.outline)} outline sections are missing a target_keyword; "
             "more than half must have one."
+        )
+
+    overlong = _overlong_keywords(plan)
+    if overlong:
+        quoted = "; ".join(f"{kw!r} ({len(kw.split())} words)" for kw in overlong)
+        return (
+            f"These keywords are full sentences/clauses, not short search phrases "
+            f"(max {_MAX_KEYWORD_WORDS} words each): {quoted}. Replace each with the "
+            "short atomic noun phrase inside it, still grounded in the research."
         )
 
     return None

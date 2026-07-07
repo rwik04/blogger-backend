@@ -44,6 +44,36 @@ def test_check_business_rules_flags_majority_missing_target_keyword():
     assert "missing a target_keyword" in issue
 
 
+def test_check_business_rules_flags_sentence_length_keyword():
+    outline = [
+        *_VALID_OUTLINE[:2],
+        DraftedOutlineSection(
+            section_id="hosts",
+            heading="Hosts",
+            target_keyword="The tournament will be jointly hosted by the USA, Canada and Mexico",
+            order_index=2,
+        ),
+    ]
+    issue = check_business_rules(_plan(outline))
+    assert issue is not None
+    assert "short search phrases" in issue
+
+
+def test_check_business_rules_flags_sentence_length_primary_keyword():
+    plan = DraftedPlan(
+        primary_keyword="The tournament will be jointly hosted by the USA, Canada and Mexico",
+        secondary_keywords=["12 groups"],
+        meta_title="Title",
+        meta_description="Description",
+        slug="slug",
+        narrative_angle="Angle.",
+        outline=_VALID_OUTLINE,
+    )
+    issue = check_business_rules(plan)
+    assert issue is not None
+    assert "short search phrases" in issue
+
+
 class _StubLLMClient:
     """Mimics `LLMClient.reason()` — returns a scripted sequence of
     responses, one per call, so the repair-retry path can be tested without

@@ -26,11 +26,21 @@ There is no reliable free real-time search-volume data available, so do not \
 try to guess search volume — instead, ground every keyword you propose in \
 what was actually researched.
 
-Grounding rule (critical): every `primary_keyword`, entry in \
-`secondary_keywords`, and each section's `target_keyword` MUST be a phrase \
-that actually appears, verbatim or near-verbatim, in the supplied claim \
-text or source titles. Do not invent a plausible-sounding keyword that \
-isn't grounded in the given material.
+Keyword shape (critical): a keyword is a short, atomic search phrase — the \
+kind of thing someone actually types into Google — not a sentence, clause, \
+or paraphrase of a claim. 2-6 words, noun-phrase style, no verbs describing \
+an event ("Qatar mediates US-Iran talks" is a headline, not a keyword — \
+"Qatar US-Iran mediation" is). Every one of `primary_keyword`, each entry \
+in `secondary_keywords`, and each section's `target_keyword` must fit on \
+one line without a comma. If you can't compress a concept below ~6 words, \
+pick the core noun phrase inside it instead of keeping the whole clause.
+
+Grounding rule (critical): every keyword's significant terms MUST actually \
+appear (verbatim or as individual words) in the supplied claim text or \
+source titles — pull the phrase FROM the material, don't invent a \
+plausible-sounding keyword nobody actually searches for. Grounding does \
+NOT mean copying a full sentence or clause verbatim; extract the short \
+noun phrase inside it.
 
 Outline requirements:
 - At least 3 sections, ordered logically (introduction first).
