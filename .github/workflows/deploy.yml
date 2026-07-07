@@ -1,4 +1,4 @@
-Sname: Deploy to EC2
+name: Deploy to EC2
 
 # SSH-based deploy: no AWS API calls, no long-lived AWS credentials — just a
 # private key that can log into the box. The server already has the repo
