@@ -33,6 +33,7 @@ from agents.strategist.strategist import Strategist
 from agents.topic_generator.topic_generator import TopicGenerator
 from agents.writer.writer import Writer
 from api.routers import finisher, research, resources, runs, strategist, topics, writer
+from api.scheduler import is_cron_enabled, run_daily_topic_cron
 from api.supervisor import PipelineSupervisor
 from db.engine import get_engine, warm_pool
 from db.repositories.base import RunNotFoundError
@@ -87,7 +88,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         writer=app.state.writer,
         finisher=app.state.finisher,
     )
+
+    cron_task: asyncio.Task | None = None
+    if is_cron_enabled():
+        cron_task = asyncio.create_task(run_daily_topic_cron(app.state.topic_generator))
+    else:
+        logger.info("Daily topic cron disabled (TOPIC_CRON_ENABLED not set)")
+
     yield
+
+    if cron_task is not None:
+        cron_task.cancel()
+        try:
+            await cron_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Blogger Pipeline API", lifespan=lifespan)

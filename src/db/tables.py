@@ -257,6 +257,7 @@ topics = Table(
     Column("gs_papers", JSON, nullable=True),
     Column("why_this_topic", Text, nullable=True),
     Column("current_relevance", Text, nullable=True),
+    Column("relevance_score", Integer, nullable=True),
     Column("trigger_source_url", Text, nullable=True),
     Column("dedup_status", String, nullable=False, server_default="new"),
     Column("similarity_score", Float, nullable=True),

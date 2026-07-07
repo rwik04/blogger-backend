@@ -57,6 +57,12 @@ class TopicGeneratorInput(BaseModel):
     user_instruction: str | None = None
     count: int = 8
     auto_approve: bool = False
+    max_output: int | None = None
+    """If set, only the `max_output` highest `relevance_score` candidates
+    survive past classification (dropped before persistence). Lets a caller
+    cast a wide net (`count`) and still only keep the best of the day — used
+    by the daily autonomous cron; `None` preserves today's keep-everything
+    behavior for manual/directed use."""
 
     @model_validator(mode="after")
     def _directed_requires_instruction(self) -> "TopicGeneratorInput":
@@ -75,6 +81,7 @@ class TopicCandidate(BaseModel):
     gs_papers: list[GsPaper]
     why_this_topic: str
     current_relevance: str
+    relevance_score: int
     trigger_source_url: str | None
     dedup_status: DedupStatus
     similarity_score: float | None
@@ -136,6 +143,7 @@ class ClassifiedCandidate(StrictSchema):
     gs_papers: list[GsPaper]
     why_this_topic: str
     current_relevance: str
+    relevance_score: int
 
 
 class ClassifiedCandidateSet(StrictSchema):
@@ -144,3 +152,11 @@ class ClassifiedCandidateSet(StrictSchema):
     corresponds to index i of the candidates passed into the prompt)."""
 
     classifications: list[ClassifiedCandidate]
+
+
+class RelevanceScoreOnly(StrictSchema):
+    """Output of the one-off `backfill-topic-relevance` CLI's per-topic LLM
+    call — scores a single already-classified topic that predates the
+    `relevance_score` column."""
+
+    relevance_score: int

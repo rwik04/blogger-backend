@@ -39,6 +39,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--count", type=int, default=8, help="Target number of candidates (default: 8).")
     parser.add_argument(
+        "--max-output",
+        type=int,
+        default=None,
+        help="If set, keep only the top N candidates by relevance_score after classification.",
+    )
+    parser.add_argument(
         "--auto-approve",
         action="store_true",
         help="Auto-mark the top surviving candidate as selected.",
@@ -64,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             user_instruction=args.instruction,
             count=args.count,
             auto_approve=args.auto_approve,
+            max_output=args.max_output,
         )
     except Exception:
         logger.exception("Invalid input")

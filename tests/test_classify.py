@@ -46,12 +46,14 @@ def test_classifications_zipped_positionally_onto_candidates():
             gs_papers=[GsPaper.GS2],
             why_this_topic="Polity relevance.",
             current_relevance="Recent ruling.",
+            relevance_score=85,
         ),
         ClassifiedCandidate(
             subject=UpscSubject.MISCELLANEOUS_CURRENT_AFFAIRS,
             gs_papers=[GsPaper.PRELIMS_ONLY],
             why_this_topic="Broad awareness.",
             current_relevance="Recent event.",
+            relevance_score=35,
         ),
     ]
     node = make_classify_node(_StubLLMClient(classifications))
@@ -61,8 +63,10 @@ def test_classifications_zipped_positionally_onto_candidates():
     merged = result["classified_candidates"]
     assert merged[0]["candidate_id"] == "c1"
     assert merged[0]["subject"] == UpscSubject.POLITY_GOVERNANCE.value
+    assert merged[0]["relevance_score"] == 85
     assert merged[1]["candidate_id"] == "c2"
     assert merged[1]["subject"] == UpscSubject.MISCELLANEOUS_CURRENT_AFFAIRS.value
+    assert merged[1]["relevance_score"] == 35
 
 
 def test_bad_fit_candidate_falls_back_to_miscellaneous_without_raising():
@@ -72,6 +76,7 @@ def test_bad_fit_candidate_falls_back_to_miscellaneous_without_raising():
             gs_papers=[GsPaper.PRELIMS_ONLY],
             why_this_topic="Doesn't fit cleanly anywhere.",
             current_relevance="Still current.",
+            relevance_score=30,
         )
     ]
     node = make_classify_node(_StubLLMClient(classifications))
@@ -89,6 +94,7 @@ def test_length_mismatch_pads_unmatched_candidates_with_fallback():
             gs_papers=[GsPaper.GS2],
             why_this_topic="Polity relevance.",
             current_relevance="Recent ruling.",
+            relevance_score=85,
         )
     ]
     node = make_classify_node(_StubLLMClient(classifications))
@@ -98,5 +104,7 @@ def test_length_mismatch_pads_unmatched_candidates_with_fallback():
     merged = result["classified_candidates"]
     assert len(merged) == 2
     assert merged[0]["subject"] == UpscSubject.POLITY_GOVERNANCE.value
+    assert merged[0]["relevance_score"] == 85
     assert merged[1]["subject"] == UpscSubject.MISCELLANEOUS_CURRENT_AFFAIRS.value
     assert merged[1]["gs_papers"] == [GsPaper.PRELIMS_ONLY.value]
+    assert merged[1]["relevance_score"] == 40

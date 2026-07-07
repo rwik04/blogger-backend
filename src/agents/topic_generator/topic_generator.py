@@ -74,6 +74,7 @@ class TopicGenerator:
             "user_instruction": input.user_instruction,
             "count": input.count,
             "auto_approve": input.auto_approve,
+            "max_output": input.max_output,
         }
 
         try:

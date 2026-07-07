@@ -150,6 +150,7 @@ class TopicRepository:
                         gs_papers=candidate["gs_papers"],
                         why_this_topic=candidate["why_this_topic"],
                         current_relevance=candidate["current_relevance"],
+                        relevance_score=candidate.get("relevance_score"),
                         trigger_source_url=candidate["trigger_source_url"],
                         dedup_status=candidate["dedup_status"],
                         similarity_score=candidate["similarity_score"],
@@ -185,6 +186,21 @@ class TopicRepository:
     def mark_topic_selected(self, topic_id: str) -> None:
         with self._engine.begin() as conn:
             conn.execute(update(topics).where(topics.c.id == topic_id).values(status="selected"))
+
+    def update_relevance_score(self, topic_id: str, score: int) -> None:
+        """Used by the one-off `backfill-topic-relevance` CLI to score topics
+        persisted before `relevance_score` existed."""
+        with self._engine.begin() as conn:
+            conn.execute(update(topics).where(topics.c.id == topic_id).values(relevance_score=score))
+
+    def list_topics_missing_relevance_score(self) -> list[dict[str, Any]]:
+        with self._engine.begin() as conn:
+            rows = (
+                conn.execute(select(topics).where(topics.c.relevance_score.is_(None)))
+                .mappings()
+                .all()
+            )
+        return [dict(row) for row in rows]
 
     def delete_topic(self, topic_id: str) -> None:
         """Hard-delete a candidate from the `topics` table — used when a

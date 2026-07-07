@@ -50,6 +50,7 @@ class _StubLLMClient:
                         gs_papers=[GsPaper.PRELIMS_ONLY],
                         why_this_topic="why",
                         current_relevance="relevance",
+                        relevance_score=60,
                     )
                 ]
             )
@@ -98,6 +99,77 @@ def test_all_duplicates_retries_extraction_once_then_proceeds():
     assert final_state["dedup_results"][0]["dedup_status"] == "similar_to_existing"
     assert len(final_state["classified_candidates"]) == 1
     assert len(repo.saved_candidates) == 1
+
+
+class _WideNetStubLLMClient:
+    """Extraction returns several distinct candidates (no dedup collisions);
+    classification assigns each a different relevance_score, so the trim
+    step's ordering is unambiguous."""
+
+    _SCORES = [30, 90, 55, 70]
+
+    def __init__(self):
+        self.extract_calls = 0
+
+    def reason(self, messages, schema, reasoning_effort=None):
+        if schema is ExtractedCandidateSet:
+            self.extract_calls += 1
+            return ExtractedCandidateSet(
+                candidates=[
+                    ExtractedCandidate(title=f"Topic {i}", one_line_summary=f"Story {i}.", trigger_source_url=None)
+                    for i in range(len(self._SCORES))
+                ]
+            )
+        if schema is ClassifiedCandidateSet:
+            return ClassifiedCandidateSet(
+                classifications=[
+                    ClassifiedCandidate(
+                        subject=UpscSubject.MISCELLANEOUS_CURRENT_AFFAIRS,
+                        gs_papers=[GsPaper.PRELIMS_ONLY],
+                        why_this_topic="why",
+                        current_relevance="relevance",
+                        relevance_score=score,
+                    )
+                    for score in self._SCORES
+                ]
+            )
+        raise AssertionError(f"unexpected schema requested: {schema}")
+
+
+class _NoDuplicatesTopicRepo:
+    saved_candidates: list[dict]
+
+    def __init__(self):
+        self.saved_candidates = []
+
+    def find_similar_topics(self, title, limit=5):
+        return []
+
+    def save_candidates(self, batch_id, candidates):
+        self.saved_candidates.extend(candidates)
+
+
+def test_max_output_trims_wide_net_to_top_candidates_by_relevance_before_persist():
+    llm_client = _WideNetStubLLMClient()
+    repo = _NoDuplicatesTopicRepo()
+    graph = build_topic_generator_graph(llm_client, _NoOpMCPClient(), repo, reasoning_effort="low")
+
+    initial_state = {
+        "run_id": "batch-2",
+        "batch_id": "batch-2",
+        "mode": "autonomous",
+        "user_instruction": None,
+        "count": 8,
+        "auto_approve": False,
+        "max_output": 2,
+        "search_rounds": [{"query": "q", "hits": [{"title": "t", "url": "https://example.com", "snippet": "s"}]}],
+    }
+
+    final_state = asyncio.run(_run_from(graph, initial_state, "extract_candidates"))
+
+    assert len(final_state["classified_candidates"]) == 2
+    assert {c["relevance_score"] for c in final_state["classified_candidates"]} == {90, 70}
+    assert len(repo.saved_candidates) == 2
 
 
 async def _run_from(graph, initial_state: dict, start_node: str) -> dict:

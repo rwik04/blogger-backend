@@ -88,6 +88,7 @@ def _to_topic_out(row: dict) -> TopicOut:
         gs_papers=row.get("gs_papers"),
         why_this_topic=row.get("why_this_topic"),
         current_relevance=row.get("current_relevance"),
+        relevance_score=row.get("relevance_score"),
         trigger_source_url=row.get("trigger_source_url"),
         dedup_status=row["dedup_status"],
         similarity_score=row.get("similarity_score"),

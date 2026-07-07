@@ -159,6 +159,7 @@ class TopicOut(BaseModel):
     gs_papers: list[str] | None
     why_this_topic: str | None
     current_relevance: str | None
+    relevance_score: int | None
     trigger_source_url: str | None
     dedup_status: str
     similarity_score: float | None

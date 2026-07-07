@@ -60,6 +60,7 @@ def make_classify_node(llm_client: LLMClient, reasoning_effort: str | None = "lo
                         "gs_papers": [p.value for p in classification.gs_papers],
                         "why_this_topic": classification.why_this_topic,
                         "current_relevance": classification.current_relevance,
+                        "relevance_score": classification.relevance_score,
                     }
                 )
                 subjects_seen.add(classification.subject.value)
@@ -71,6 +72,7 @@ def make_classify_node(llm_client: LLMClient, reasoning_effort: str | None = "lo
                         "gs_papers": ["prelims_only"],
                         "why_this_topic": candidate["one_line_summary"],
                         "current_relevance": candidate["one_line_summary"],
+                        "relevance_score": 40,
                     }
                 )
 

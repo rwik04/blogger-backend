@@ -25,15 +25,22 @@ def build_query_expansion_user_prompt(user_instruction: str) -> str:
 
 # --- extract_candidates ------------------------------------------------------
 
-EXTRACT_CANDIDATES_SYSTEM = """You are scanning web search results to identify distinct, \
-newsworthy topic candidates suitable for a UPSC-aspirant-facing current-affairs blog. \
-Given a batch of search results (title, URL, and a short snippet each), identify up to \
-{count} genuinely distinct underlying stories or developments — not one candidate per \
-search result, since several results often cover the same story. For each candidate, \
-return a clear, specific title (not a generic subject label), a one-line summary of what \
-the story actually is, and the URL of the single search result that best represents/triggered \
-this candidate (or null if none fits well). Skip anything that's purely promotional, an \
-opinion piece with no underlying news event, or too vague to state as a specific topic."""
+EXTRACT_CANDIDATES_SYSTEM = """You are scanning web search results to identify distinct \
+topic candidates suitable for a UPSC-aspirant-facing current-affairs blog. The output is a \
+blog, not a news article — so candidates should be pitched at the level of an ongoing \
+situation or story a full explainer could be written about (e.g. "Russia-Ukraine war", \
+"global oil price shock", "Venezuela presidential crisis"), not a single narrow news bite \
+inside that story (e.g. not "Ukraine shoots down three drones over Kyiv on Tuesday"). Use \
+the search results as evidence that a situation is live and current, but state the candidate \
+at the broader story/situation level the results are actually about. Given a batch of search \
+results (title, URL, and a short snippet each), identify up to {count} genuinely distinct \
+underlying stories or situations — not one candidate per search result, since several \
+results often cover the same story. For each candidate, return a clear, specific title (not \
+a generic subject label, and not an overly narrow single-fact headline), a one-line summary \
+of what the story actually is, and the URL of the single search result that best \
+represents/triggered this candidate (or null if none fits well). Skip anything that's purely \
+promotional, an opinion piece with no underlying news event, or too vague to state as a \
+specific topic."""
 
 
 EXTRACT_CANDIDATES_DIVERSITY_NUDGE = """\n\nNote: a previous pass over similar search results \
@@ -94,6 +101,13 @@ relevance. For each candidate, in the same order given, assign:
 - `why_this_topic`: a short, concrete value case for why a UPSC aspirant should care about this.
 - `current_relevance`: why this matters right now, tied to the actual trigger story/development —
   not generic background.
+- `relevance_score`: an integer 0-100 rating how strongly this candidate deserves a UPSC
+  aspirant's attention right now. Weigh three things together: (1) exam relevance — how
+  likely this is to actually show up in Prelims/Mains/essay, (2) currency — how live and
+  recent the underlying development is, not stale background, (3) substantiveness — whether
+  this is a meaty, explainer-worthy situation rather than a minor, quickly-forgotten blip.
+  Use the full range: routine or narrow items should score low (below 40), genuinely major,
+  live, high-yield situations should score high (80+). Don't cluster everything in the middle.
 
 Return exactly one classification per candidate, in the same order as the candidates were given."""
 
@@ -106,3 +120,25 @@ def build_classify_user_prompt(candidates: list[dict[str, Any]]) -> str:
     lines = ["Candidates to classify (respond with exactly one classification per candidate, in order):"]
     lines.extend(_format_candidate_for_classification(i, c) for i, c in enumerate(candidates, start=1))
     return "\n".join(lines)
+
+
+# --- backfill_relevance (one-off score-only pass for pre-existing topics) --
+
+BACKFILL_RELEVANCE_SYSTEM = """You are scoring a single already-classified UPSC current-affairs \
+topic for exam relevance. Assign `relevance_score`, an integer 0-100 rating how strongly this \
+topic deserves a UPSC aspirant's attention right now. Weigh three things together: (1) exam \
+relevance — how likely this is to actually show up in Prelims/Mains/essay, (2) currency — how \
+live and recent the underlying development is, not stale background, (3) substantiveness — \
+whether this is a meaty, explainer-worthy situation rather than a minor, quickly-forgotten blip. \
+Use the full range: routine or narrow items should score low (below 40), genuinely major, live, \
+high-yield situations should score high (80+). Don't cluster everything in the middle."""
+
+
+def build_backfill_relevance_user_prompt(topic: dict[str, Any]) -> str:
+    return (
+        f"Title: {topic['title']}\n"
+        f"Summary: {topic.get('one_line_summary') or ''}\n"
+        f"Subject: {topic.get('subject') or ''}\n"
+        f"Why this topic: {topic.get('why_this_topic') or ''}\n"
+        f"Current relevance: {topic.get('current_relevance') or ''}"
+    )
